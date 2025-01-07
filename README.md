@@ -2,8 +2,8 @@
 Welcome to the PUDU (Protocol Unified Design Unit) repository, our Python package for liquid handling robot control on Synthetic Biology workflows.
 
 
-<img src="https://github.com/RudgeLab/PUDU/blob/main/images/PUDU_Logo.png#gh-light-mode-only" alt="PUDU logo" width="250"/>
-<img src="https://github.com/RudgeLab/PUDU/blob/main/images/PUDU_Logo.png#gh-dark-mode-only" alt="PUDU night logo" width="250"/>
+<img src="https://github.com/MyersResearchGroup/PUDU/blob/main/images/PUDU_Logo.png#gh-light-mode-only" alt="PUDU logo" width="250"/>
+<img src="https://github.com/MyersResearchGroup/PUDU/blob/main/images/PUDU_Logo_dark.png#gh-dark-mode-only" alt="PUDU night logo" width="250"/>
 
 ## *The art of automated liquid handling*
 
