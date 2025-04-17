@@ -83,14 +83,16 @@ class DNA_assembly():
         self.aspiration_rate = aspiration_rate
         self.dispense_rate = dispense_rate
 
-class Protocol_from_sbol(DNA_assembly):
+class Protocol_from_sbol2(DNA_assembly):
     '''
     Creates a protocol for the automated assembly of a SBOL Composite.
 
     Attributes
     ----------
-    assembly_plan : sbol3.Component
-        The SBOL Composite to be assembled.
+
+
+    assembly_dict : Dict {parts: [list of parts], backbone: backbone uri, restriction_enzyme: re uri}
+        dictionary containing information about parts, backbone and restriction enzyme to be used in the assembly.
     volume_total_reaction : float
         The total volume of the reaction mix in microliters. By default, 20 microliters.
     volume_part : float
