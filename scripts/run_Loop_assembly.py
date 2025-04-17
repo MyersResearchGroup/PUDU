@@ -2,9 +2,9 @@ from pudu.assembly import Loop_assembly
 from opentrons import protocol_api
 import sbol3
 
-assembly_Odd_1 = {"promoter":["j23101", "j23100"], "rbs":"B0034", "cds":"GFP", "terminator":"B0015", "receiver":"Odd_1"}
-assembly_Even_2 = {"c4_receptor":"GD0001", "c4_buff_gfp":"GD0002", "spacer1":"20ins1", "spacer2":"Even_2", "receiver":"Even_2"}
-assemblies = [assembly_Odd_1, assembly_Even_2]
+assembly_1 = {"parts":["j23101_URI", "B0032_URI", "GFP_URI", "B0015_URI" ], "backbone":"Moclo_DVA", "restriction enzyme":"BsaI"}
+assembly_2 = {"parts":["j23100_URI", "B0032_URI", "GFP_URI", "B0015_URI" ], "backbone":"Moclo_DVA", "restriction enzyme":"BsaI"}
+assemblies = [assembly_1, assembly_2]
 
 # metadata
 metadata = {
