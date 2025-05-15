@@ -373,3 +373,133 @@ assemblies = [assembly_Odd_1]
 assembly_Odd_1 = {"promoter":["j23101", "j23100"], "rbs":"B0034", "cds":"GFP", "terminator":"B0015", "receiver":"Odd_1"}
 assembly_Even_2 = {"c4_receptor":"GD0001", "c4_buff_gfp":"GD0002", "spacer1":"20ins1", "spacer2":"Even_2", "receiver":"Even_2"}
 assemblies = [assembly_Odd_1, assembly_Even_2]
+
+ # Lists to store different components
+assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
+'PartsList' : ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/J23100/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
+'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1'],
+'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1'
+}]
+
+class sbol2assembly(DNA_assembly):
+    '''
+    Creates a protocol from a dictionaty for the automated assembly.
+
+    '''
+    def __init__(self, assemblies:List[Dict],
+        *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.assemblies = assemblies
+        self.dict_of_parts_in_temp_mod_position = {}
+        self.dict_of_parts_in_thermocycler = {}
+        self.assembly_plan = None
+        self.parts_set = set()
+        self.backbone_set = set()
+        self.restriction_enzyme = assembly["RestrictionEnzyme"] #TODO generalize for multiple restriction enzymes
+        self.combined_set = set()
+        self.has_odd = False
+        self.has_even = False
+        self.odd_combinations = []
+        self.even_combinations = []
+            
+        # add parts to a set
+        for assembly in self.assemblies:       
+            #part parts
+            for part in assembly["PartsList"]:
+                self.parts_set.add(part)
+            #backbone parts
+            self.backbone_set.add(assembly["Backbone"])
+            #1 enzyme
+            #TODO: add here to generalize restriction enzymes #self.restriction_enzyme_set.add(assembly["RestrictionEnzyme"])
+
+        self.combined_set = self.parts_set.union(self.backbone_set)
+
+        max_parts = 19 #TODO check if this olds, 20
+        if len(self.combined_set) > max_parts:
+            raise ValueError(f'This protocol only supports assemblies with up to {max_parts} parts. Number of parts in the protocol is {len(self.parts_set)}. Printing parts set:{self.parts_set}')
+        thermocyler_available_wells = 96 - self.thermocycler_starting_well 
+        thermocycler_wells_needed = (len(self.odd_combinations) + len(self.even_combinations))*self.replicates
+        if thermocycler_wells_needed > thermocyler_available_wells:
+            raise ValueError(f'According to your setup this protocol only supports assemblies with up to {thermocyler_available_wells} combinations. Number of combinations in the protocol is {thermocycler_wells_needed}.')                
+    
+    def run(self, protocol: protocol_api.ProtocolContext):
+        #Labware
+        #Load temperature module
+        tem_mod = protocol.load_module('temperature module', f'{self.temperature_module_position}') #CV: Previously was '3', but the cord was not long enough
+        tem_mod_block = tem_mod.load_labware(self.temperature_module_labware)
+        #Load the thermocycler module, its default location is on slots 7, 8, 10 and 11
+        thermocycler_mod = protocol.load_module('thermocycler module')
+        thermocycler_mod_plate = thermocycler_mod.load_labware(self.thermocycler_labware)
+        #Load the tiprack
+        tiprack = protocol.load_labware(self.tiprack_labware, f'{self.tiprack_position}')
+        #Load the pipette
+        pipette = protocol.load_instrument(self.pipette, self.pipette_position, tip_racks=[tiprack])
+        #Fixed volumes
+        volume_reagents = self.volume_restriction_enzyme + self.volume_t4_dna_ligase + self.volume_t4_dna_ligase_buffer
+        #Load the reagents
+        dd_h2o = tem_mod_block['A1']
+        self.dict_of_parts_in_temp_mod_position['dd_h2o'] = temp_wells[0]
+        t4_dna_ligase = tem_mod_block['A2'] 
+        self.dict_of_parts_in_temp_mod_position['t4_dna_ligase'] = temp_wells[1]
+        t4_dna_ligase_buffer = tem_mod_block['A3'] 
+        self.dict_of_parts_in_temp_mod_position['t4_dna_ligase_buffer'] = temp_wells[2]
+        temp_wells_counter = 3 
+        restriction_enzyme_tube = tem_mod_block[temp_wells[temp_wells_counter]]
+        self.dict_of_parts_in_temp_mod_position[self.restriction_enzyme] = temp_wells[temp_wells_counter]
+        temp_wells_counter += 1
+        #Load the parts
+        for part in self.combined_set:
+            self.dict_of_parts_in_temp_mod_position[part] = temp_wells[temp_wells_counter]
+            temp_wells_counter += 1
+        #Setup
+        #Set the temperature of the temperature module and the thermocycler to 4°C
+        tem_mod.set_temperature(4)
+        thermocycler_mod.open_lid()
+        thermocycler_mod.set_block_temperature(4)
+        #can be done with multichannel pipette?
+        current_thermocycler_well = self.thermocycler_starting_well
+        #build combinations
+        for assembly in self.assemblies:
+            for r in range(self.replicates):
+                volume_dd_h2o = self.volume_total_reaction - (volume_reagents + self.volume_part*len(assembly["PartsList"]))
+                liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
+                liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
+                liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
+                liquid_transfer(pipette, self.volume_restriction_enzyme, restriction_enzyme_tube, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
+                #pippeting backbone
+                liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly["Backbone"]]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
+                #pippeting parts
+                for part in assembly["PartsList"]:
+                        if type(part) == str:
+                            part_name=part  
+                        else: raise ValueError(f'Part {part} is not a string nor sbol2.Component') #TODO: improve this check 
+                        #part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
+                        liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_name]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
+                self.dict_of_parts_in_thermocycler[assembly] = thermo_wells[current_thermocycler_well]
+                current_thermocycler_well+=1       
+  
+        protocol.comment('Take out the reagents since the temperature module will be turn off')
+        #We close the thermocycler lid and wait for the temperature to reach 42°C
+        thermocycler_mod.close_lid()
+        #The thermocycler's lid temperature is set with the following command
+        thermocycler_mod.set_lid_temperature(42)
+        tem_mod.deactivate()
+        #Cycles were made following https://pubs.acs.org/doi/10.1021/sb500366v
+        profile = [
+            {'temperature': 42, 'hold_time_minutes': 2},
+            {'temperature': 16, 'hold_time_minutes': 5}]
+        thermocycler_mod.execute_profile(steps=profile, repetitions=25, block_max_volume=30)
+
+        denaturation = [
+            {'temperature': 60, 'hold_time_minutes': 10},
+            {'temperature': 80, 'hold_time_minutes': 10}]
+        thermocycler_mod.execute_profile(steps=denaturation, repetitions=1, block_max_volume=30)
+        thermocycler_mod.set_block_temperature(4)
+        #END
+
+        #output
+        print('Parts and reagents in temp_module')
+        print(self.dict_of_parts_in_temp_mod_position)
+        print('Assembled parts in thermocycler_module')
+        print(self.dict_of_parts_in_thermocycler)     
