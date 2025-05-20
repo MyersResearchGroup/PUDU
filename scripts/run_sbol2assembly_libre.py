@@ -239,7 +239,8 @@ class sbol2assembly(DNA_assembly):
         print('Parts and reagents in temp_module')
         print(self.dict_of_parts_in_temp_mod_position)
         print('Assembled parts in thermocycler_module')
-        print(self.dict_of_parts_in_thermocycler)     
+        print(self.dict_of_parts_in_thermocycler)    
+         
 # assembly
 assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
 'PartsList' : ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/J23100/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
