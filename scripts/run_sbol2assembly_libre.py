@@ -3,11 +3,9 @@ from typing import List, Dict, Union
 from fnmatch import fnmatch
 from itertools import product
 
-#comment to practice push
-
 # utils
 
-
+#96 well List
 plate_96_wells = [
 'A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12',
 'B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','B11','B12',
@@ -19,8 +17,10 @@ plate_96_wells = [
 'H1','H2','H3','H4','H5','H6','H7','H8','H9','H10','H11','H12'
 ]
 
+#filler variable equal to well List
 thermo_wells = plate_96_wells
 
+#Function to transfer Liquid
 def liquid_transfer(pipette, volume, source, destination, asp_rate:float=0.5, disp_rate:float=1.0, blow_out:bool=True, touch_tip:bool=False, mix_before:float=0.0, mix_after:float=0.0, mix_reps:int=3, new_tip:bool=True, drop_tip:bool=True):
     if new_tip:
         pipette.pick_up_tip()
@@ -37,6 +37,7 @@ def liquid_transfer(pipette, volume, source, destination, asp_rate:float=0.5, di
     if drop_tip:
         pipette.drop_tip() 
 
+#new List for temporary wells
 temp_wells = [
 'A1','A2','A3','A4','A5','A6',
 'B1','B2','B3','B4','B5','B6',
@@ -44,6 +45,7 @@ temp_wells = [
 'D1','D2','D3','D4','D5','D6'
 ]
 
+#class DNA Assembly
 class DNA_assembly():
     '''
     Creates a protocol for automated DNA assembly.
@@ -85,6 +87,7 @@ class DNA_assembly():
     dispense_rate : float
         The rate of dispense in microliters per second. By default, 1 microliter per second.
     '''
+    #self attributes
     def __init__(self,
         volume_total_reaction:float = 20,
         volume_part:float = 2,
