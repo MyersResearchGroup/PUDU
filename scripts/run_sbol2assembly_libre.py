@@ -133,7 +133,7 @@ class sbol2assembly(DNA_assembly):
         self.assembly_plan = None
         self.parts_set = set()
         self.backbone_set = set()
-        self.restriction_enzyme = assembly["RestrictionEnzyme"] #TODO generalize for multiple restriction enzymes
+        self.restriction_enzyme = "" #empty string to prevent early call of assembly
         self.combined_set = set()
         self.has_odd = False
         self.has_even = False
@@ -148,7 +148,7 @@ class sbol2assembly(DNA_assembly):
             #backbone parts
             self.backbone_set.add(assembly["Backbone"])
             #1 enzyme
-            #TODO: add here to generalize restriction enzymes #self.restriction_enzyme_set.add(assembly["RestrictionEnzyme"])
+            self.restriction_enzyme = assembly["RestrictionEnzyme"]
 
         self.combined_set = self.parts_set.union(self.backbone_set)
 
