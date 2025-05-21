@@ -153,6 +153,7 @@ class sbol2assembly(DNA_assembly):
             #backbone parts
             self.backbone_set.add(assembly["Backbone"])
             #1 enzyme
+            #most likely a later error caused here
             #only takes the last restriction enzyme in the last dictionary
             self.restriction_enzyme = assembly["RestrictionEnzyme"]
 
