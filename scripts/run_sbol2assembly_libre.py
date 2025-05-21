@@ -125,7 +125,7 @@ class DNA_assembly():
 
 class sbol2assembly(DNA_assembly):
     '''
-    Creates a protocol from a dictionaty for the automated assembly.
+    Creates a protocol from a dictionary for the automated assembly.
 
     '''
     def __init__(self, assemblies:List[Dict],
@@ -153,6 +153,7 @@ class sbol2assembly(DNA_assembly):
             #backbone parts
             self.backbone_set.add(assembly["Backbone"])
             #1 enzyme
+            #only takes the last restriction enzyme in the last dictionary
             self.restriction_enzyme = assembly["RestrictionEnzyme"]
 
         self.combined_set = self.parts_set.union(self.backbone_set)
