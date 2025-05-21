@@ -213,7 +213,8 @@ class sbol2assembly(DNA_assembly):
                         else: raise ValueError(f'Part {part} is not a string nor sbol2.Component') #TODO: improve this check 
                         #part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
                         liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_name]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
-                self.dict_of_parts_in_thermocycler[assembly] = thermo_wells[current_thermocycler_well]
+                #This line under this comment was written to get it to run, not run correctly        
+                self.dict_of_parts_in_thermocycler[current_thermocycler_well] = thermo_wells[current_thermocycler_well]
                 current_thermocycler_well+=1       
   
         protocol.comment('Take out the reagents since the temperature module will be turn off')
