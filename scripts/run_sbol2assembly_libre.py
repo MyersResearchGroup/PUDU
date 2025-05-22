@@ -146,6 +146,8 @@ class sbol2assembly(DNA_assembly):
         self.odd_combinations = []
         self.even_combinations = []
             
+        #create a way to deal with multiple restriction Enzymes(will be a set)
+
         # add parts to a set
         for assembly in self.assemblies:       
             #part parts
@@ -283,6 +285,10 @@ assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza1
 'Product' : 'https://charmme.synbiohub.org/public/CIDARMoCloKit/cre_CRE/1'
 }]
 
+#create a recursive function based on the how many times 
+#def assemblyRecursion(, duplicate dictionaries, amount):
+#   append()
+
 #Todo find product uri
 
 # metadata
@@ -296,5 +302,5 @@ def run(protocol= protocol_api.ProtocolContext):
 
     pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
     pudu_sbol2_assembly.run(protocol)
-    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx")
+    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx2")
 
