@@ -243,6 +243,29 @@ class sbol2assembly(DNA_assembly):
         thermocycler_mod.set_block_temperature(4)
         #END
 
+        def get_xlsx_output(self, name:str):
+            workbook = xlsxwriter.Workbook(f'{name}.xlsx')
+            worksheet = workbook.add_worksheet()
+            row_num = 0
+            col_num = 0
+            worksheet.write(row_num, col_num, 'Parts in temp_module')
+            row_num += 2
+            for key, value in self.dict_of_parts_in_temp_mod_position.items():
+                worksheet.write(row_num, col_num, key)
+                worksheet.write(row_num+1, col_num, value)
+                col_num += 1
+            col_num = 0
+            row_num += 4
+            worksheet.write(row_num, col_num, 'Parts in thermocycler_module')
+            row_num += 2
+            for key, value in self.dict_of_parts_in_thermocycler.items():
+                worksheet.write(row_num, col_num, key)
+                worksheet.write_column(row_num+1, col_num, value)
+                col_num += 1
+            workbook.close()
+            self.xlsx_output = workbook
+            return self.xlsx_output
+
         #output
         print('Parts and reagents in temp_module')
         print(self.dict_of_parts_in_temp_mod_position)
