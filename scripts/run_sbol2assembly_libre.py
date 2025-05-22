@@ -222,8 +222,9 @@ class sbol2assembly(DNA_assembly):
                         #part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
                         liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_name]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
                 #This line under this comment was written to get it to run, not run correctly        
-                self.dict_of_parts_in_thermocycler[current_thermocycler_well] = thermo_wells[current_thermocycler_well]
-                current_thermocycler_well+=1       
+                #need products uri 
+                self.dict_of_parts_in_thermocycler[assembly["Product"]] = thermo_wells[current_thermocycler_well]
+                current_thermocycler_well+=1     
   
         protocol.comment('Take out the reagents since the temperature module will be turn off')
         #We close the thermocycler lid and wait for the temperature to reach 42°C
@@ -278,8 +279,11 @@ class sbol2assembly(DNA_assembly):
 assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
 'PartsList' : ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/J23100/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1'],
-'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1'
+'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1', 
+'Product' : 'https://charmme.synbiohub.org/public/CIDARMoCloKit/cre_CRE/1'
 }]
+
+#Todo find product uri
 
 # metadata
 metadata = {
