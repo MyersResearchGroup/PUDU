@@ -288,6 +288,7 @@ metadata = {
 
 def run(protocol= protocol_api.ProtocolContext):
 
-    pudu_loop_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
-    pudu_loop_assembly.run(protocol)
+    pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
+    pudu_sbol2_assembly.run(protocol)
+    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx")
 
