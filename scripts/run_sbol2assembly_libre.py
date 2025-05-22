@@ -2,6 +2,7 @@ from opentrons import protocol_api
 from typing import List, Dict, Union
 from fnmatch import fnmatch
 from itertools import product
+import xlsxwriter
 
 # utils
 
@@ -266,11 +267,12 @@ class sbol2assembly(DNA_assembly):
         self.xlsx_output = workbook
         return self.xlsx_output
 
+    #Make a print function for later
     #output
-    print('Parts and reagents in temp_module')
-    print(self.dict_of_parts_in_temp_mod_position)
-    print('Assembled parts in thermocycler_module')
-    print(self.dict_of_parts_in_thermocycler)    
+    #print('Parts and reagents in temp_module')
+    #print(self.dict_of_parts_in_temp_mod_position)
+    #print('Assembled parts in thermocycler_module')
+    #print(self.dict_of_parts_in_thermocycler)    
          
 # assembly
 assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
