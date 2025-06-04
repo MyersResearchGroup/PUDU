@@ -46,11 +46,16 @@ temp_wells = [
 'D1','D2','D3','D4','D5','D6'
 ]
 
-#Helper function for print(TBD)
+#Helper function for print
+def printFunct():
+    print('Parts and reagents in temp_module')
+    print(self.dict_of_parts_in_temp_mod_position)
+    print('Assembled parts in thermocycler_module')
+    print(self.dict_of_parts_in_thermocycler)
 
 
 #Helper function for recursion
-def processAssemblies(assemblies, index=0, protocol):
+def processAssemblies(assemblies, protocol, index=0):
     if index >= len(assemblies):  # Base case: stop when index exceeds list length
         return
     #sets assembly = to current dict
@@ -220,27 +225,26 @@ class sbol2assembly(DNA_assembly):
         #can be done with multichannel pipette?
         current_thermocycler_well = self.thermocycler_starting_well
         #build combinations
-        for assembly in self.assemblies:
-            for r in range(self.replicates):
-                volume_dd_h2o = self.volume_total_reaction - (volume_reagents + self.volume_part*len(assembly["PartsList"]))
-                liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
-                liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
-                liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
-                liquid_transfer(pipette, self.volume_restriction_enzyme, restriction_enzyme_tube, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
-                #pippeting backbone
-                liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly["Backbone"]]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
-                #pippeting parts
-                for part in assembly["PartsList"]:
-                        if type(part) == str:
-                            part_name=part  
-                        else: raise ValueError(f'Part {part} is not a string nor sbol2.Component') #TODO: improve this check 
-                        #part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
-                        liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_name]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
-                #This line under this comment was written to get it to run, not run correctly        
-                #need products uri 
-                self.dict_of_parts_in_thermocycler[assembly["Product"]] = thermo_wells[current_thermocycler_well]
-                current_thermocycler_well+=1     
-  
+        for r in range(self.replicates):
+            volume_dd_h2o = self.volume_total_reaction - (volume_reagents + self.volume_part*len(self.assembly["PartsList"]))
+            liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
+            liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
+            liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
+            liquid_transfer(pipette, self.volume_restriction_enzyme, restriction_enzyme_tube, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
+            #pippeting backbone
+            liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[self.assembly["Backbone"]]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
+            #pippeting parts
+            for part in self.assembly["PartsList"]:
+                    if type(part) == str:
+                        part_name=part  
+                    else: raise ValueError(f'Part {part} is not a string nor sbol2.Component') #TODO: improve this check 
+                    #part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
+                    liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_name]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
+            #This line under this comment was written to get it to run, not run correctly        
+            #need products uri 
+            self.dict_of_parts_in_thermocycler[self.assembly["Product"]] = thermo_wells[current_thermocycler_well]
+            current_thermocycler_well+=1     
+
         protocol.comment('Take out the reagents since the temperature module will be turn off')
         #We close the thermocycler lid and wait for the temperature to reach 42°C
         thermocycler_mod.close_lid()
@@ -281,14 +285,7 @@ class sbol2assembly(DNA_assembly):
             col_num += 1
         workbook.close()
         self.xlsx_output = workbook
-        return self.xlsx_output
-
-    #Make a print function for later
-    #output
-    #print('Parts and reagents in temp_module')
-    #print(self.dict_of_parts_in_temp_mod_position)
-    #print('Assembled parts in thermocycler_module')
-    #print(self.dict_of_parts_in_thermocycler)    
+        return self.xlsx_output    
          
 # assembly
 assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
@@ -297,12 +294,6 @@ assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza1
 'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1', 
 'Product' : 'https://charmme.synbiohub.org/public/CIDARMoCloKit/cre_CRE/1'
 }]
-
-#create a recursive function based on the how many times 
-#def assemblyRecursion(, duplicate dictionaries, amount):
-#   append()
-
-#Todo find product uri
 
 # metadata
 metadata = {
@@ -319,6 +310,6 @@ def run(protocol= protocol_api.ProtocolContext):
     print(assembly_sbol2_uris)
     #What assembly_sbol2_uris is a list of dictionaries
     
-    processAssemblies(assembly_sbol2_uris, index=0, protocol)
+    processAssemblies(assembly_sbol2_uris, protocol, index=0)
 
 
