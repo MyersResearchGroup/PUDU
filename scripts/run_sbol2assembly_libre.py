@@ -50,7 +50,7 @@ temp_wells = [
 
 
 #Helper function for recursion
-def processAssemblies(assemblies, index=0):
+def processAssemblies(assemblies, index=0, protocol):
     if index >= len(assemblies):  # Base case: stop when index exceeds list length
         return
     #sets assembly = to current dict
@@ -319,6 +319,6 @@ def run(protocol= protocol_api.ProtocolContext):
     print(assembly_sbol2_uris)
     #What assembly_sbol2_uris is a list of dictionaries
     
-    processAssemblies(assembly_sbol2_uris, index=0)
+    processAssemblies(assembly_sbol2_uris, index=0, protocol)
 
 
