@@ -310,6 +310,7 @@ def run(protocol= protocol_api.ProtocolContext):
     print(assembly_sbol2_uris)
     #What assembly_sbol2_uris is a list of dictionaries
     
+    #Does not work issues with load_module(unknown cause of error)
     processAssemblies(assembly_sbol2_uris, protocol, index=0)
 
 
