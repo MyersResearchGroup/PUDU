@@ -111,3 +111,65 @@ position_to_row_and_column = {'A1':(1,1), 'A2':(1,2), 'A3':(1,3), 'A4':(1,4), 'A
                             'H1':(8,1), 'H2':(8,2), 'H3':(8,3), 'H4':(8,4), 'H5':(8,5), 'H6':(8,6), 'H7':(8,7), 'H8':(8,8), 'H9':(8,9), 'H10':(8,10), 'H11':(8,11), 'H12':(8,12)}
 
 row_letter_to_number = {'A':1, 'B':2, 'C':3, 'D':4, 'E':5, 'F':6, 'G':7, 'H':8}
+
+
+#This needs 
+def dictionaryCreator(file):
+    #given code from website
+    doc = sb2.Document()
+    doc.read(file)
+    #Loops through commponetDefinition
+    #for DNA
+    # Lists to store different components
+    BackBoneList = ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1']
+    PartsList = ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/J23100/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
+    'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1']
+    RestrictionEnzymeList = ['https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1']
+    # Flags to track duplicates
+    gotBone = False
+    gotZyme = False
+    # Output dictionary
+    outputDictionary = {"Parts": [], "Backbone": -1, "Restriction Enzyme": -1}
+    # Loop through component definitions
+    for cd in doc.componentDefinitions:
+        print(cd)
+        # Checks backbone
+        if cd in BackBoneList:
+            print(cd)
+            print("backbone")
+            if not gotBone:
+                outputDictionary["Backbone"] = cd
+                gotBone = True  # Update flag
+            else:
+                print("You have more than one backbone")
+                return -1
+        # Checks parts
+        if cd in PartsList:
+            print(cd)
+            print("got part")
+            outputDictionary["Parts"].append(cd)
+        # Checks enzymes
+        if cd in RestrictionEnzymeList:
+            print(cd)
+            print("Enzyme")
+            if not gotZyme:
+                outputDictionary["Restriction Enzyme"] = cd  # Assign value
+                gotZyme = True  # Update flag
+            else:
+                print("You have more than one restriction enzyme")
+                return -1
+    # Error Checks
+    if len(outputDictionary["Parts"]) <= 1:
+        print("Invalid number of parts")
+        return -1
+    if outputDictionary["Backbone"] == -1:
+        print("No Backbone found, try again")
+        return -1
+    if outputDictionary["Restriction Enzyme"] == -1:
+        print("No Restriction Enzyme found, try again")
+        return -1
+    #(outputDictionary)
+    response = jsonify(outputDictionary)
+    content = response.get_data(as_text=True)
+
+    return content
