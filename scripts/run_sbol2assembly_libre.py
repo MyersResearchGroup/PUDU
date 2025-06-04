@@ -46,6 +46,24 @@ temp_wells = [
 'D1','D2','D3','D4','D5','D6'
 ]
 
+#Helper function for print(TBD)
+
+
+#Helper function for recursion
+def processAssemblies(assemblies, index=0):
+    if index >= len(assemblies):  # Base case: stop when index exceeds list length
+        return
+    #sets assembly = to current dict
+    assembly = assemblies[index]
+
+    #runs the assembly for that dictionary 
+    pudu_sbol2_assembly = sbol2assembly(assembly)
+    pudu_sbol2_assembly.run(protocol)
+    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx2")
+
+    # Recursively call the function for the next assembly
+    processAssemblies(assemblies, index + 1)
+
 #class DNA Assembly
 class DNA_assembly():
     '''
@@ -129,11 +147,11 @@ class sbol2assembly(DNA_assembly):
     Creates a protocol from a dictionary for the automated assembly.
 
     '''
-    def __init__(self, assemblies:List[Dict],
+    def __init__(self, assembly:Dict,
         *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        self.assemblies = assemblies
+        self.assembly = assembly
         self.dict_of_parts_in_temp_mod_position = {}
         self.dict_of_parts_in_thermocycler = {}
         self.assembly_plan = None
@@ -148,17 +166,12 @@ class sbol2assembly(DNA_assembly):
             
         #create a way to deal with multiple restriction Enzymes(will be a set)
 
-        # add parts to a set
-        for assembly in self.assemblies:       
-            #part parts
-            for part in assembly["PartsList"]:
-                self.parts_set.add(part)
-            #backbone parts
-            self.backbone_set.add(assembly["Backbone"])
-            #1 enzyme
-            #most likely a later error caused here
-            #only takes the last restriction enzyme in the last dictionary
-            self.restriction_enzyme = assembly["RestrictionEnzyme"]
+        for part in assembly["PartsList"]:
+            self.parts_set.add(part)
+        #backbone part
+        self.backbone_set.add(assembly["Backbone"])
+        #1 enzyme
+        self.restriction_enzyme = assembly["RestrictionEnzyme"]
 
         self.combined_set = self.parts_set.union(self.backbone_set)
 
@@ -300,6 +313,12 @@ metadata = {
 
 def run(protocol= protocol_api.ProtocolContext):
 
+
+    #this is an issue the call should be recursive
+    print("what I want")
+    print(assembly_sbol2_uris)
+    #What assembly_sbol2_uris is a list of dictionaries
+    
     pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
     pudu_sbol2_assembly.run(protocol)
     pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx2")
