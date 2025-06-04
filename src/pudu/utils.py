@@ -113,8 +113,11 @@ position_to_row_and_column = {'A1':(1,1), 'A2':(1,2), 'A3':(1,3), 'A4':(1,4), 'A
 row_letter_to_number = {'A':1, 'B':2, 'C':3, 'D':4, 'E':5, 'F':6, 'G':7, 'H':8}
 
 
-#This needs 
+#Xml to uri dictionary
 def dictionaryCreator(file):
+    import sbol2 as sb2
+    from flask import Flask, jsonify
+    app = Flask(__name__)
     #given code from website
     doc = sb2.Document()
     doc.read(file)
