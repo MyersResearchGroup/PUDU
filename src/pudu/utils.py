@@ -178,6 +178,7 @@ def dictionaryCreatorjson(file):
     return content
 
 #same as before but no Json
+#Change to add roles 
 def dictionaryCreatorPython(file):
     import sbol2 as sb2
     #given code from website
@@ -186,15 +187,18 @@ def dictionaryCreatorPython(file):
     #Loops through commponetDefinition
     #for DNA
     # Lists to store different components
-    BackBoneList = ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1']
-    PartsList = ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/J23100/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
-    'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1']
-    RestrictionEnzymeList = ['https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1']
-    # Flags to track duplicates
-    gotBone = False
-    gotZyme = False
+    ProductRoleList = ['http://identifiers.org/so/SO:0000804']
+
+    #look at the roles for each
+    for cd in doc.componentDefinitions:
+        #check for role
+        if cd.role in ProductRoleList:
+            print(cd)
+
+
+
     # Output dictionary
-    outputDictionary = {"Parts": [], "Backbone": -1, "Restriction Enzyme": -1}
+    outputAssemblies = []
     # Loop through component definitions
     for cd in doc.componentDefinitions:
         print(cd)
