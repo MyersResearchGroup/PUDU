@@ -139,14 +139,12 @@ class sbol2assembly(DNA_assembly):
         self.assembly_plan = None
         self.parts_set = set()
         self.backbone_set = set()
-        self.restriction_enzyme = "" #empty string to prevent early call of assembly
+        self.restriction_enzyme_set = set()
         self.combined_set = set()
         self.has_odd = False
         self.has_even = False
         self.odd_combinations = []
         self.even_combinations = []
-
-        #create a way to deal with multiple restriction Enzymes(will be a set)
 
         # add parts to a set
         for assembly in self.assemblies:       
@@ -155,10 +153,8 @@ class sbol2assembly(DNA_assembly):
                 self.parts_set.add(part)
             #backbone parts
             self.backbone_set.add(assembly["Backbone"])
-            #1 enzyme
-            #most likely a later error caused here
-            #only takes the last restriction enzyme in the last dictionary
-            self.restriction_enzyme = assembly["RestrictionEnzyme"]
+            #add enzymes
+            self.restriction_enzyme_set.add(assembly["RestrictionEnzyme"])
 
         self.combined_set = self.parts_set.union(self.backbone_set)
 
@@ -193,9 +189,11 @@ class sbol2assembly(DNA_assembly):
         self.dict_of_parts_in_temp_mod_position['t4_dna_ligase_buffer'] = temp_wells[2]
         temp_wells_counter = 3 
         restriction_enzyme_tube = tem_mod_block[temp_wells[temp_wells_counter]]
-        self.dict_of_parts_in_temp_mod_position[self.restriction_enzyme] = temp_wells[temp_wells_counter]
-        temp_wells_counter += 1
-        #Load the parts
+        #load the enzymes
+        for enzyme in self.restriction_enzyme_set:
+            self.dict_of_parts_in_temp_mod_position[enzyme] = temp_wells[temp_wells_counter]
+            temp_wells_counter += 1
+        #Load the parts(includes backbones)
         for part in self.combined_set:
             self.dict_of_parts_in_temp_mod_position[part] = temp_wells[temp_wells_counter]
             temp_wells_counter += 1
@@ -213,7 +211,7 @@ class sbol2assembly(DNA_assembly):
                 liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
                 liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
                 liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
-                liquid_transfer(pipette, self.volume_restriction_enzyme, restriction_enzyme_tube, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
+                liquid_transfer(pipette, self.volume_restriction_enzyme, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly['RestrictionEnzyme']]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
                 #pippeting backbone
                 liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly["Backbone"]]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
                 #pippeting parts
@@ -302,4 +300,4 @@ def run(protocol= protocol_api.ProtocolContext):
 
     pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
     pudu_sbol2_assembly.run(protocol)
-    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx")
+    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx3")
