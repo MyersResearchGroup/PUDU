@@ -241,3 +241,62 @@ def dictionaryCreatorPython(file):
     response = outputDictionary
 
     return response
+
+
+#NEW dictionary creator that goes through xml file 
+#reads roles and returns a list of dictionaries
+def dictionaryListCreatorPython(file):
+    import sbol2 as sb2
+
+    # Disable typed URIs for cleaner URI strings
+    sb2.Config.setOption('sbol_typed_uris', False)
+
+    # Read the SBOL document
+    doc = sb2.Document()
+    doc.read(file)
+
+    # Known SO roles
+    PRODUCT_ROLE = 'http://identifiers.org/so/SO:0000804'     # composite product
+    PLASMID_ROLE = 'https://identifiers.org/SO:0000755'       # plasmid/backbone
+    RESTRICTION_ENZYME_ROLE = 'http://identifiers.org/so/SO:0001691'  # restriction site
+
+    # Known enzyme names (lowercase)
+    ENZYME_NAMES = ['bsai', 'ecori', 'bamhi', 'hindiii', 'noti', 'xhoi']
+
+    product_dicts = []
+
+    for cd in doc.componentDefinitions:
+        if PRODUCT_ROLE in cd.roles:
+            result = {
+                'Product': cd.identity,
+                'Backbone': None,
+                'Parts': [],
+                'Restriction Enzyme': None
+            }
+
+            for comp in cd.components:
+                sub_def_uri = comp.definition
+                sub_cd = doc.componentDefinitions.get(sub_def_uri)
+
+                if sub_cd is None:
+                    continue
+
+                roles = sub_cd.roles
+                display_id = sub_cd.displayId.lower() if sub_cd.displayId else ""
+
+                # Normalize displayId by removing non-alpha chars for flexible matching
+                normalized_id = ''.join(c for c in display_id if c.isalpha())
+
+                print(f"{sub_cd.displayId} roles: {roles}")
+
+                if PLASMID_ROLE in roles:
+                    result['Backbone'] = sub_def_uri
+                    result['Parts'].append(sub_def_uri)
+                elif RESTRICTION_ENZYME_ROLE in roles or any(enzyme in normalized_id for enzyme in ENZYME_NAMES):
+                    result['Restriction Enzyme'] = sub_def_uri
+                else:
+                    result['Parts'].append(sub_def_uri)
+
+            product_dicts.append(result)
+
+    return product_dicts
