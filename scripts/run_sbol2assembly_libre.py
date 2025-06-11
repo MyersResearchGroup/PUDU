@@ -281,7 +281,20 @@ assembly_sbol2_uris = [{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza1
 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1'],
 'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1', 
 'Product' : 'https://charmme.synbiohub.org/public/CIDARMoCloKit/cre_CRE/1'
-}]
+},
+{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
+'PartsList' : ['https://synbiohub.org/public/igem/BBa_J23101/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
+'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1'],
+'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1', 
+'Product' : 'https://charmme.synbiohub.org/public/CIDARMoCloKit/cre_CRE/1'
+},
+{ 'Backbone' : 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1',
+'PartsList' : ['https://synbiohub.org/public/igem/BBa_J23106/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
+'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1'],
+'RestrictionEnzyme' : 'https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1', 
+'Product' : 'https://charmme.synbiohub.org/public/CIDARMoCloKit/cre_CRE/1'
+}
+]
 
 #create a recursive function based on the how many times 
 #def assemblyRecursion(, duplicate dictionaries, amount):
@@ -300,4 +313,4 @@ def run(protocol= protocol_api.ProtocolContext):
 
     pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
     pudu_sbol2_assembly.run(protocol)
-    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx3")
+    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx4")
