@@ -258,15 +258,21 @@ def dictionaryListCreatorPython(file):
     # Known SO roles
     PRODUCT_ROLE = 'http://identifiers.org/so/SO:0000804'     # composite product
     PLASMID_ROLE = 'https://identifiers.org/SO:0000755'       # plasmid/backbone
-    RESTRICTION_ENZYME_ROLE = 'http://identifiers.org/so/SO:0001691'  # restriction site
 
-    # Known enzyme names (lowercase)
-    ENZYME_NAMES = ['bsai', 'ecori', 'bamhi', 'hindiii', 'noti', 'xhoi']
+    # SBOL type for Protein
+    PROTEIN_TYPE = sb2.BIOPAX_PROTEIN  # URI for proteins
 
     product_dicts = []
 
+    globalEnzyme = None
     for cd in doc.componentDefinitions:
+        # Detect restriction enzyme by Protein type
+        #create a filler variable
+        if PROTEIN_TYPE in cd.types:
+            globalEnzyme = cd.identity
+
         if PRODUCT_ROLE in cd.roles:
+            #create new dict for every product
             result = {
                 'Product': cd.identity,
                 'Backbone': None,
@@ -282,21 +288,25 @@ def dictionaryListCreatorPython(file):
                     continue
 
                 roles = sub_cd.roles
-                display_id = sub_cd.displayId.lower() if sub_cd.displayId else ""
+                display_id = sub_cd.displayId or ""
 
-                # Normalize displayId by removing non-alpha chars for flexible matching
-                normalized_id = ''.join(c for c in display_id if c.isalpha())
+                #print(f"{display_id} roles: {roles} types: {types}")
 
-                print(f"{sub_cd.displayId} roles: {roles}")
-
+                # Detect backbone by SO role
                 if PLASMID_ROLE in roles:
                     result['Backbone'] = sub_def_uri
                     result['Parts'].append(sub_def_uri)
-                elif RESTRICTION_ENZYME_ROLE in roles or any(enzyme in normalized_id for enzyme in ENZYME_NAMES):
-                    result['Restriction Enzyme'] = sub_def_uri
+
+                # Default case: treat as regular part
                 else:
                     result['Parts'].append(sub_def_uri)
 
             product_dicts.append(result)
+
+        #add enzymes to each dictionary
+        for dict in product_dicts:
+            print("check for enzyme")
+            print(globalEnzyme)
+            dict['Restriction Enzyme'] = globalEnzyme
 
     return product_dicts
