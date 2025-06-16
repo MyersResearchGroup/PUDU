@@ -276,7 +276,7 @@ def dictionaryListCreatorPython(file):
             result = {
                 'Product': cd.identity,
                 'Backbone': None,
-                'Parts': [],
+                'PartsList': [],
                 'Restriction Enzyme': None
             }
 
@@ -295,18 +295,16 @@ def dictionaryListCreatorPython(file):
                 # Detect backbone by SO role
                 if PLASMID_ROLE in roles:
                     result['Backbone'] = sub_def_uri
-                    result['Parts'].append(sub_def_uri)
+                    result['PartsList'].append(sub_def_uri)
 
                 # Default case: treat as regular part
                 else:
-                    result['Parts'].append(sub_def_uri)
+                    result['PartsList'].append(sub_def_uri)
 
             product_dicts.append(result)
 
         #add enzymes to each dictionary
         for dict in product_dicts:
-            print("check for enzyme")
-            print(globalEnzyme)
             dict['Restriction Enzyme'] = globalEnzyme
 
     return product_dicts
