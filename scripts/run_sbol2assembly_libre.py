@@ -3,7 +3,16 @@ from typing import List, Dict, Union
 from fnmatch import fnmatch
 from itertools import product
 import xlsxwriter
-from utils.py import dictionaryListCreatorPython
+
+import os
+import sys
+
+# Works under opentrons_simulate
+script_dir = os.getcwd()
+parent_dir = os.path.abspath(os.path.join(script_dir, '..'))
+sys.path.append(parent_dir)
+
+from src.pudu.utils import dictionaryListCreatorPython
 
 # utils
 
@@ -294,9 +303,9 @@ metadata = {
 
 def run(protocol= protocol_api.ProtocolContext):
     # Load dictionary from XML file
-    xml_file = "your_input_file.xml"
+    xml_file = "RyanTest.xml"
     assembly_sbol2_uris = dictionaryListCreatorPython(xml_file)
 
     pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
     pudu_sbol2_assembly.run(protocol)
-    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx4")
+    pudu_sbol2_assembly.get_xlsx_output("SBOL_xlsx5")
