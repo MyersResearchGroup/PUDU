@@ -247,6 +247,7 @@ def dictionaryCreatorPython(file):
 #reads roles and returns a list of dictionaries
 def dictionaryListCreatorPython(file):
     import sbol2 as sb2
+    import json
 
     # Disable typed URIs for cleaner URI strings
     sb2.Config.setOption('sbol_typed_uris', False)
