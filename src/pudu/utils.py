@@ -309,3 +309,39 @@ def dictionaryListCreatorPython(file):
             dict['Restriction Enzyme'] = globalEnzyme
 
     return product_dicts
+
+
+def test_golden_gate(self):
+        pro_doc = sb2.Document()
+        pro_doc.read('pro_in_bb.xml')
+
+        #where I am working adding 2 and 3
+        pro2_doc = sb2.Document()
+        pro2_doc.read('pro2_in_bb.xml') #add document
+
+        pro3_doc = sb2.Document()
+        pro3_doc.read('pro3_in_bb.xml') #add document
+    
+        rbs_doc = sb2.Document()
+        rbs_doc.read('rbs_in_bb.xml')
+
+        cds_doc = sb2.Document()
+        cds_doc.read('cds_in_bb.xml')
+        
+        ter_doc = sb2.Document()
+        ter_doc.read('terminator_in_bb.xml')
+
+        bb_doc = sb2.Document()
+        bb_doc.read('backbone.xml')
+
+        part_docs = [pro_doc, rbs_doc, cds_doc, ter_doc]
+
+        assembly_doc = sb2.Document()
+        assembly_obj = golden_gate_assembly_plan('testassem', part_docs, bb_doc, 'BsaI', assembly_doc)
+
+        composites = assembly_obj.run()
+
+        assembly_doc.write('validation_assembly.xml')
+
+        sbol_validation_result = assembly_doc.validate()
+        self.assertEqual(sbol_validation_result, 'Valid.', 'Assembly SBOL validation failed')
