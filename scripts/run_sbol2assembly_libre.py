@@ -3,16 +3,7 @@ from typing import List, Dict, Union
 from fnmatch import fnmatch
 from itertools import product
 import xlsxwriter
-
-import os
-import sys
-
-# Works under opentrons_simulate
-script_dir = os.getcwd()
-parent_dir = os.path.abspath(os.path.join(script_dir, '..'))
-sys.path.append(parent_dir)
-
-from src.pudu.utils import dictionaryListCreatorPython
+from tempUtils import dictionaryListCreatorPython
 
 # utils
 
