@@ -17,3 +17,4 @@ def run(protocol= protocol_api.ProtocolContext):
 
     pudu_loop_assembly = Loop_assembly(assemblies=assemblies,)
     pudu_loop_assembly.run(protocol)
+    pudu_loop_assembly.get_xlsx_output('loop_assembly_output.xlsx')
