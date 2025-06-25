@@ -8,6 +8,6 @@
             "https://sbolcanvas.org/J23101/1",
             "https://sbolcanvas.org/B0034/1"
         ],
-        "Restriction Enzyme": null
+        "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1"
     }
 ]
