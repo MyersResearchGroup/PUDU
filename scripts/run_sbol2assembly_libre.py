@@ -3,7 +3,6 @@ from typing import List, Dict, Union
 from fnmatch import fnmatch
 from itertools import product
 import xlsxwriter
-from tempUtils import dictionaryListCreatorPython
 
 # utils
 
