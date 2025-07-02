@@ -154,7 +154,7 @@ class sbol2assembly(DNA_assembly):
             #backbone parts
             self.backbone_set.add(assembly["Backbone"])
             #add enzymes
-            self.restriction_enzyme_set.add(assembly["RestrictionEnzyme"])
+            self.restriction_enzyme_set.add(assembly["Restriction Enzyme"])
 
         self.combined_set = self.parts_set.union(self.backbone_set)
 
@@ -211,7 +211,7 @@ class sbol2assembly(DNA_assembly):
                 liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
                 liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
                 liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
-                liquid_transfer(pipette, self.volume_restriction_enzyme, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly['RestrictionEnzyme']]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
+                liquid_transfer(pipette, self.volume_restriction_enzyme, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly['Restriction Enzyme']]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
                 #pippeting backbone
                 liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly["Backbone"]]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
                 #pippeting parts
@@ -292,9 +292,14 @@ metadata = {
 'apiLevel': '2.13'}
 
 def run(protocol= protocol_api.ProtocolContext):
-    # Load dictionary from XML file
-    xml_file = "RyanTest.xml"
-    assembly_sbol2_uris = dictionaryListCreatorPython(xml_file)
+
+    #Take the Json file from Assembly to Dict then set it to assembly_sbol2_uris
+    #I am taking in the name of Json file and make it assembly
+    #import using pandas or somthing to convert to usable dictionary
+    import json
+    with open("output.json", "r") as f:
+        assembly_sbol2_uris = json.load(f)
+
 
     pudu_sbol2_assembly = sbol2assembly(assemblies=assembly_sbol2_uris)
     pudu_sbol2_assembly.run(protocol)
