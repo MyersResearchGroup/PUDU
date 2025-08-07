@@ -83,68 +83,51 @@ class DNA_assembly():
         self.aspiration_rate = aspiration_rate
         self.dispense_rate = dispense_rate
 
-class Protocol_from_sbol2(DNA_assembly):
+class sbol2_DNA_Assembly(DNA_assembly):
     '''
-    Creates a protocol for the automated assembly of a SBOL Composite.
+    Creates a protocol from a dictionary for the automated assembly.
 
-    Attributes
-    ----------
-
-
-    assembly_dict : Dict {parts: [list of parts], backbone: backbone uri, restriction_enzyme: re uri}
-        dictionary containing information about parts, backbone and restriction enzyme to be used in the assembly.
-    volume_total_reaction : float
-        The total volume of the reaction mix in microliters. By default, 20 microliters.
-    volume_part : float
-        The volume of each part in microliters. By default, 2 microliters.
-    volume_restriction_enzyme : float
-        The volume of the restriction enzyme in microliters. By default, 2 microliters.
-    volume_t4_dna_ligase : float
-        The volume of T4 DNA Ligase in microliters. By default, 4 microliters.
-    volume_t4_dna_ligase_buffer : float
-        The volume of T4 DNA Ligase Buffer in microliters. By default, 2 microliters.
-    replicates : int    
-        The number of replicates of the assembly reaction. By default, 2.
-    aspiration_rate : float
-        The rate of aspiration in microliters per second. By default, 0.5 microliters per second.
-    thermocycler_starting_well : int    
-        The starting well of the thermocycler module. By default, 0.
-    thermocycler_labware : str
-        The labware type of the thermocycler module. By default, 'nest_96_wellplate_100ul_pcr_full_skirt'.
-    thermocycler_slots : list
-        The slots of the thermocycler module. By default, [7, 8, 10, 11].
-    temperature_module_labware : str
-        The labware type of the temperature module. By default, 'opentrons_24_aluminumblock_nest_1.5ml_snapcap'.
-    temperature_module_slot : int
-        The slot of the temperature module. By default, 1.
-    tiprack_labware : str
-        The labware type of the tiprack. By default, 'opentrons_96_tiprack_20ul'.
-    tiprack_slot : int
-        The slot of the tiprack. By default, 9.
-    pipette_type : str
-        The type of pipette. By default, 'p20_single_gen2'.
-    pipette_mount : str
-        The mount of the pipette. By default, 'left'.
     '''
-    def __init__(self, assembly_plan:sbol3.Component,
-       *args, **kwargs):
+    def __init__(self, assemblies:List[Dict],
+        *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        self.assembly_plan = assembly_plan
+
+        self.assemblies = assemblies
         self.dict_of_parts_in_temp_mod_position = {}
         self.dict_of_parts_in_thermocycler = {}
-        self.sbol_output = []
-    
-        metadata = {
-        'protocolName': 'Automated Golden Gate from SBOL',
-        'author': 'Gonzalo Vidal <gsvidal@uc.cl>',
-        'description': 'Protocol to perform a Golden Gate assembly from SBOL',
-        'apiLevel': '2.13'}
+        self.assembly_plan = None
+        self.parts_set = set()
+        self.backbone_set = set()
+        self.restriction_enzyme_set = set()
+        self.combined_set = set()
+        self.has_odd = False
+        self.has_even = False
+        self.odd_combinations = []
+        self.even_combinations = []
 
-    def run(self, protocol: protocol_api.ProtocolContext): 
+        # add parts to a set
+        for assembly in self.assemblies:       
+            #part parts
+            for part in assembly["PartsList"]:
+                self.parts_set.add(part)
+            #backbone parts
+            self.backbone_set.add(assembly["Backbone"])
+            #add enzymes
+            self.restriction_enzyme_set.add(assembly["Restriction Enzyme"])
 
+        self.combined_set = self.parts_set.union(self.backbone_set)
+
+        max_parts = 19 #TODO check if this olds, 20
+        if len(self.combined_set) > max_parts:
+            raise ValueError(f'This protocol only supports assemblies with up to {max_parts} parts. Number of parts in the protocol is {len(self.parts_set)}. Printing parts set:{self.parts_set}')
+        thermocyler_available_wells = 96 - self.thermocycler_starting_well 
+        thermocycler_wells_needed = (len(self.odd_combinations) + len(self.even_combinations))*self.replicates
+        if thermocycler_wells_needed > thermocyler_available_wells:
+            raise ValueError(f'According to your setup this protocol only supports assemblies with up to {thermocyler_available_wells} combinations. Number of combinations in the protocol is {thermocycler_wells_needed}.')                
+
+    def run(self, protocol: protocol_api.ProtocolContext):
         #Labware
-        #Load the magnetic module
+        #Load temperature module
         tem_mod = protocol.load_module('temperature module', f'{self.temperature_module_position}') #CV: Previously was '3', but the cord was not long enough
         tem_mod_block = tem_mod.load_labware(self.temperature_module_labware)
         #Load the thermocycler module, its default location is on slots 7, 8, 10 and 11
@@ -155,71 +138,52 @@ class Protocol_from_sbol2(DNA_assembly):
         #Load the pipette
         pipette = protocol.load_instrument(self.pipette, self.pipette_position, tip_racks=[tiprack])
         #Fixed volumes
-        #State volumes. They can be a function of [DNA], the minimun value is 1 uL
-        #Parts should be diluted to the necessary concentration to aspirate 1 or 2 uL 
-        volume_reagents =self.volume_restriction_enzyme + self.volume_t4_dna_ligase + self.volume_t4_dna_ligase_buffer
-        
+        volume_reagents = self.volume_restriction_enzyme + self.volume_t4_dna_ligase + self.volume_t4_dna_ligase_buffer
         #Load the reagents
-        restriction_enzyme = tem_mod_block['A1']
-        self.dict_of_parts_in_temp_mod_position['restriction_enzyme'] = temp_wells[0]
+        dd_h2o = tem_mod_block['A1']
+        self.dict_of_parts_in_temp_mod_position['dd_h2o'] = temp_wells[0]
         t4_dna_ligase = tem_mod_block['A2'] 
         self.dict_of_parts_in_temp_mod_position['t4_dna_ligase'] = temp_wells[1]
         t4_dna_ligase_buffer = tem_mod_block['A3'] 
         self.dict_of_parts_in_temp_mod_position['t4_dna_ligase_buffer'] = temp_wells[2]
-        dd_h2o = tem_mod_block['A4']
-        self.dict_of_parts_in_temp_mod_position['dd_h2o'] = temp_wells[3]
-        temp_wells_counter = 4
+        temp_wells_counter = 3 
+        restriction_enzyme_tube = tem_mod_block[temp_wells[temp_wells_counter]]
+        #load the enzymes
+        for enzyme in self.restriction_enzyme_set:
+            self.dict_of_parts_in_temp_mod_position[enzyme] = temp_wells[temp_wells_counter]
+            temp_wells_counter += 1
+        #Load the parts(includes backbones)
+        for part in self.combined_set:
+            self.dict_of_parts_in_temp_mod_position[part] = temp_wells[temp_wells_counter]
+            temp_wells_counter += 1
         #Setup
         #Set the temperature of the temperature module and the thermocycler to 4°C
         tem_mod.set_temperature(4)
         thermocycler_mod.open_lid()
         thermocycler_mod.set_block_temperature(4)
-        
-        #creating set of parts to be used in the assembly
-        assemblies_component_set = set()
-        for composite in self.assembly_plan.composites:
-            composite_component = [top_level for top_level in composite if type(top_level)==sbol3.Component][0]
-            for part_extract_sc in composite_component.features:
-                #get parts
-                part = part_extract_sc.instance_of.lookup()
-                if not part:
-                    raise ValueError(f'Part in backbone not found from part extract {part_extract_sc.identity}')
-                assemblies_component_set.add(part)
-
-        #load parts from set in the temperature module   
-        if len(assemblies_component_set) > 20:
-            raise ValueError('Number of parts in the assembly plan is greater than 20. This protocol only supports assemblies with up to 20 parts')
-        for part_component in assemblies_component_set:
-            self.dict_of_parts_in_temp_mod_position[part_component] = temp_wells[temp_wells_counter]
-            temp_wells_counter += 1
-        #load parts and reagents in the thermocycler
-        current_thermocycler_well = self.thermocycler_starting_well    
-        for composite in self.assembly_plan.composites:
-            composite_component = [top_level for top_level in composite if type(top_level)==sbol3.Component][0]
-            #load reagents in the thermocycler
-            volume_parts = len(composite_component.features) * self.volume_part
-            volume_dd_h2o = self.volume_total_reaction - (volume_reagents + volume_parts)
-            if volume_dd_h2o < 1 and volume_dd_h2o!=0 :
-                raise ValueError('The volume of dd_h2o is not enough to perform the experiment')
-            liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
-            liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
-            liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
-            liquid_transfer(pipette, self.volume_restriction_enzyme, restriction_enzyme, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
-            #TODO: multiple restriction enzymes
+        #can be done with multichannel pipette?
+        current_thermocycler_well = self.thermocycler_starting_well
+        #build combinations
+        for assembly in self.assemblies:
             for r in range(self.replicates):
-                for part_extract_sc in composite_component.features:
-                    #get parts
-                    part_component = part_extract_sc.instance_of.lookup()
-                    part_name = part_component.name
-                    assembled_dna = sbol3.Implementation(identity=f'assembled_dna_{part_name}_{r}', built=part, description=f'Thermocycler well {thermo_wells[current_thermocycler_well]}')
-                    self.sbol_output.append(assembled_dna)
-                    part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
-                    liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_component]], part_ubication_in_thermocyler, self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
-                if r == 0:
-                    self.dict_of_parts_in_thermocycler[composite_component] = [thermo_wells[current_thermocycler_well]]   
-                else:
-                    self.dict_of_parts_in_thermocycler[composite_component].append(thermo_wells[current_thermocycler_well]) 
-                current_thermocycler_well+=1
+                volume_dd_h2o = self.volume_total_reaction - (volume_reagents + self.volume_part*len(assembly["PartsList"]))
+                liquid_transfer(pipette, volume_dd_h2o, dd_h2o, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate)
+                liquid_transfer(pipette, self.volume_t4_dna_ligase_buffer, t4_dna_ligase_buffer, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase_buffer)
+                liquid_transfer(pipette, self.volume_t4_dna_ligase, t4_dna_ligase, thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_t4_dna_ligase)
+                liquid_transfer(pipette, self.volume_restriction_enzyme, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly['Restriction Enzyme']]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_restriction_enzyme)
+                #pippeting backbone
+                liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[assembly["Backbone"]]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
+                #pippeting parts
+                for part in assembly["PartsList"]:
+                        if type(part) == str:
+                            part_name=part  
+                        else: raise ValueError(f'Part {part} is not a string nor sbol2.Component') #TODO: improve this check 
+                        #part_ubication_in_thermocyler = thermocycler_mod_plate[thermo_wells[current_thermocycler_well]]
+                        liquid_transfer(pipette, self.volume_part, tem_mod_block[self.dict_of_parts_in_temp_mod_position[part_name]], thermocycler_mod_plate[thermo_wells[current_thermocycler_well]], self.aspiration_rate, self.dispense_rate, mix_before=self.volume_part)
+                #This line under this comment was written to get it to run, not run correctly        
+                #need products uri 
+                self.dict_of_parts_in_thermocycler[assembly["Product"]] = thermo_wells[current_thermocycler_well]
+                current_thermocycler_well+=1     
 
         protocol.comment('Take out the reagents since the temperature module will be turn off')
         #We close the thermocycler lid and wait for the temperature to reach 42°C
@@ -248,8 +212,6 @@ class Protocol_from_sbol2(DNA_assembly):
         worksheet.write(row_num, col_num, 'Parts in temp_module')
         row_num += 2
         for key, value in self.dict_of_parts_in_temp_mod_position.items():
-            if type(key)==sbol3.Component:
-                key=key.name
             worksheet.write(row_num, col_num, key)
             worksheet.write(row_num+1, col_num, value)
             col_num += 1
@@ -258,15 +220,12 @@ class Protocol_from_sbol2(DNA_assembly):
         worksheet.write(row_num, col_num, 'Parts in thermocycler_module')
         row_num += 2
         for key, value in self.dict_of_parts_in_thermocycler.items():
-            if type(key)==sbol3.Component:
-                key=key.identity
             worksheet.write(row_num, col_num, key)
             worksheet.write_column(row_num+1, col_num, value)
             col_num += 1
         workbook.close()
         self.xlsx_output = workbook
         return self.xlsx_output
-        #END
         
 class Domestication(DNA_assembly):
     '''
