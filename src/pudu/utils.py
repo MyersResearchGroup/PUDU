@@ -112,168 +112,39 @@ position_to_row_and_column = {'A1':(1,1), 'A2':(1,2), 'A3':(1,3), 'A4':(1,4), 'A
 
 row_letter_to_number = {'A':1, 'B':2, 'C':3, 'D':4, 'E':5, 'F':6, 'G':7, 'H':8}
 
-
-#Xml to uri dictionary
-def dictionaryCreatorjson(file):
-    import sbol2 as sb2
-    from flask import Flask, jsonify
-    app = Flask(__name__)
-    #given code from website
-    doc = sb2.Document()
-    doc.read(file)
-    #Loops through commponetDefinition
-    #for DNA
-    # Lists to store different components
-    BackBoneList = ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/ComponentDefinition_dvk_backbone_core/1']
-    PartsList = ['https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/J23100/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/E0040m_gfp/1',
-    'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0032/1', 'https://charmme.synbiohub.org/user/Gonza10V/CIDARMoCloKit/B0015/1']
-    RestrictionEnzymeList = ['https://charmme.synbiohub.org/user/Gonza10V/ligationtestforreal/ComponentDefinition_BsaI/1']
-    # Flags to track duplicates
-    gotBone = False
-    gotZyme = False
-    # Output dictionary
-    outputDictionary = {"Parts": [], "Backbone": -1, "Restriction Enzyme": -1}
-    # Loop through component definitions
-    for cd in doc.componentDefinitions:
-        print(cd)
-        # Checks backbone
-        if cd in BackBoneList:
-            print(cd)
-            print("backbone")
-            if not gotBone:
-                outputDictionary["Backbone"] = cd
-                gotBone = True  # Update flag
-            else:
-                print("You have more than one backbone")
-                return -1
-        # Checks parts
-        if cd in PartsList:
-            print(cd)
-            print("got part")
-            outputDictionary["Parts"].append(cd)
-        # Checks enzymes
-        if cd in RestrictionEnzymeList:
-            print(cd)
-            print("Enzyme")
-            if not gotZyme:
-                outputDictionary["Restriction Enzyme"] = cd  # Assign value
-                gotZyme = True  # Update flag
-            else:
-                print("You have more than one restriction enzyme")
-                return -1
-    # Error Checks
-    if len(outputDictionary["Parts"]) <= 1:
-        print("Invalid number of parts")
-        return -1
-    if outputDictionary["Backbone"] == -1:
-        print("No Backbone found, try again")
-        return -1
-    if outputDictionary["Restriction Enzyme"] == -1:
-        print("No Restriction Enzyme found, try again")
-        return -1
-    #(outputDictionary)
-    response = jsonify(outputDictionary)
-    content = response.get_data(as_text=True)
-
-    return content
-
-#same as before but no Json
-#Change to add roles 
-def dictionaryCreatorPython(file):
-    import sbol2 as sb2
-    #given code from website
-    doc = sb2.Document()
-    doc.read(file)
-    #Loops through commponetDefinition
-    #for DNA
-    # Lists to store different components
-    ProductRoleList = ['http://identifiers.org/so/SO:0000804']
-
-    #look at the roles for each
-    for cd in doc.componentDefinitions:
-        #check for role
-        if cd.role in ProductRoleList:
-            print(cd)
-
-
-
-    # Output dictionary
-    outputAssemblies = []
-    # Loop through component definitions
-    for cd in doc.componentDefinitions:
-        print(cd)
-        # Checks backbone
-        if cd in BackBoneList:
-            print(cd)
-            print("backbone")
-            if not gotBone:
-                outputDictionary["Backbone"] = cd
-                gotBone = True  # Update flag
-            else:
-                print("You have more than one backbone")
-                return -1
-        # Checks parts
-        if cd in PartsList:
-            print(cd)
-            print("got part")
-            outputDictionary["Parts"].append(cd)
-        # Checks enzymes
-        if cd in RestrictionEnzymeList:
-            print(cd)
-            print("Enzyme")
-            if not gotZyme:
-                outputDictionary["Restriction Enzyme"] = cd  # Assign value
-                gotZyme = True  # Update flag
-            else:
-                print("You have more than one restriction enzyme")
-                return -1
-    # Error Checks
-    if len(outputDictionary["Parts"]) <= 1:
-        print("Invalid number of parts")
-        return -1
-    if outputDictionary["Backbone"] == -1:
-        print("No Backbone found, try again")
-        return -1
-    if outputDictionary["Restriction Enzyme"] == -1:
-        print("No Restriction Enzyme found, try again")
-        return -1
-    #(outputDictionary)
-    response = outputDictionary
-
-    return response
-
-
-#NEW dictionary creator that goes through xml file 
-#reads roles and returns a list of dictionaries
-def dictionaryListCreatorPython(file):
-    import sbol2 as sb2
-    import json
-
-    # Disable typed URIs for cleaner URI strings
+def assembly_plan_RDF_to_JSON(file):
     sb2.Config.setOption('sbol_typed_uris', False)
-
-    # Read the SBOL document
     doc = sb2.Document()
     doc.read(file)
 
     # Known SO roles
-    PRODUCT_ROLE = 'http://identifiers.org/so/SO:0000804'     # composite product
-    PLASMID_ROLE = 'https://identifiers.org/SO:0000755'       # plasmid/backbone
+    PRODUCT_ROLE = 'http://identifiers.org/so/SO:0000804'
+    BackBone_ROLE = 'http://identifiers.org/so/SO:0000755'
+    ENZYME_ROLE = 'http://identifiers.org/obi/OBI:0000732'
 
-    # SBOL type for Protein
-    PROTEIN_TYPE = sb2.BIOPAX_PROTEIN  # URI for proteins
+    PARTS_ROLE_LIST = [
+        'http://identifiers.org/so/SO:0000031', 'http://identifiers.org/so/SO:0000316',
+        'http://identifiers.org/so/SO:0001977', 'http://identifiers.org/so/SO:0001956',
+        'http://identifiers.org/so/SO:0000188', 'http://identifiers.org/so/SO:0000839',
+        'http://identifiers.org/so/SO:0000167', 'http://identifiers.org/so/SO:0000139',
+        'http://identifiers.org/so/SO:0001979', 'http://identifiers.org/so/SO:0001955',
+        'http://identifiers.org/so/SO:0001546', 'http://identifiers.org/so/SO:0001263',
+        'http://identifiers.org/SO:0000141', 'http://identifiers.org/so/SO:0000141'
+    ]
 
     product_dicts = []
-
     globalEnzyme = None
+
     for cd in doc.componentDefinitions:
-        # Detect restriction enzyme by Protein type
-        #create a filler variable
-        if PROTEIN_TYPE in cd.types:
+        print(f"\n🔍 Checking Component: {cd.displayId}")
+        print(f"  Types: {cd.types}")
+        print(f"  Roles: {cd.roles}")
+
+        if ENZYME_ROLE in cd.roles:
             globalEnzyme = cd.identity
+            print(f"✅ Found enzyme definition: {globalEnzyme}")
 
         if PRODUCT_ROLE in cd.roles:
-            #create new dict for every product
             result = {
                 'Product': cd.identity,
                 'Backbone': None,
@@ -282,66 +153,33 @@ def dictionaryListCreatorPython(file):
             }
 
             for comp in cd.components:
-                sub_def_uri = comp.definition
-                sub_cd = doc.componentDefinitions.get(sub_def_uri)
-
+                sub_cd = doc.componentDefinitions.get(comp.definition)
                 if sub_cd is None:
+                    print(f"⚠️ Component definition for {comp.displayId} not found.")
                     continue
 
-                roles = sub_cd.roles
-                display_id = sub_cd.displayId or ""
+                print(f"  → Subcomponent: {sub_cd.displayId}")
+                print(f"    Roles: {sub_cd.roles}")
 
-                #print(f"{display_id} roles: {roles} types: {types}")
+                if BackBone_ROLE in sub_cd.roles:
+                    result['Backbone'] = sub_cd.identity
+                    print(f"    🧬 Assigned Backbone: {sub_cd.identity}")
 
-                # Detect backbone by SO role
-                if PLASMID_ROLE in roles:
-                    result['Backbone'] = sub_def_uri
-                    result['PartsList'].append(sub_def_uri)
+                if any(role in PARTS_ROLE_LIST for role in sub_cd.roles):
+                    result['PartsList'].append(sub_cd.identity)
+                    print(f"    🧩 Added Part: {sub_cd.identity}")
 
-                # Default case: treat as regular part
-                else:
-                    result['PartsList'].append(sub_def_uri)
+            if not result['Backbone']:
+                print(f"⚠️ No backbone found for product {cd.displayId}")
+            if not result['PartsList']:
+                print(f"⚠️ No parts found for product {cd.displayId}")
 
             product_dicts.append(result)
 
-        #add enzymes to each dictionary
-        for dict in product_dicts:
-            dict['Restriction Enzyme'] = globalEnzyme
+    for entry in product_dicts:
+        entry['Restriction Enzyme'] = globalEnzyme
+
+    with open('output.json', 'w') as json_file:
+        json.dump(product_dicts, json_file, indent=4)
 
     return product_dicts
-
-
-def test_golden_gate(self):
-        pro_doc = sb2.Document()
-        pro_doc.read('pro_in_bb.xml')
-
-        #where I am working adding 2 and 3
-        pro2_doc = sb2.Document()
-        pro2_doc.read('pro2_in_bb.xml') #add document
-
-        pro3_doc = sb2.Document()
-        pro3_doc.read('pro3_in_bb.xml') #add document
-    
-        rbs_doc = sb2.Document()
-        rbs_doc.read('rbs_in_bb.xml')
-
-        cds_doc = sb2.Document()
-        cds_doc.read('cds_in_bb.xml')
-        
-        ter_doc = sb2.Document()
-        ter_doc.read('terminator_in_bb.xml')
-
-        bb_doc = sb2.Document()
-        bb_doc.read('backbone.xml')
-
-        part_docs = [pro_doc, rbs_doc, cds_doc, ter_doc]
-
-        assembly_doc = sb2.Document()
-        assembly_obj = golden_gate_assembly_plan('testassem', part_docs, bb_doc, 'BsaI', assembly_doc)
-
-        composites = assembly_obj.run()
-
-        assembly_doc.write('validation_assembly.xml')
-
-        sbol_validation_result = assembly_doc.validate()
-        self.assertEqual(sbol_validation_result, 'Valid.', 'Assembly SBOL validation failed')
