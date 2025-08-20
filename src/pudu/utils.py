@@ -1,4 +1,4 @@
-
+import sbol2
 
 thermo_wells = [
 'A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12',
@@ -113,8 +113,8 @@ position_to_row_and_column = {'A1':(1,1), 'A2':(1,2), 'A3':(1,3), 'A4':(1,4), 'A
 row_letter_to_number = {'A':1, 'B':2, 'C':3, 'D':4, 'E':5, 'F':6, 'G':7, 'H':8}
 
 def assembly_plan_RDF_to_JSON(file):
-    sb2.Config.setOption('sbol_typed_uris', False)
-    doc = sb2.Document()
+    sbol2.Config.setOption('sbol_typed_uris', False)
+    doc = sbol2.Document()
     doc.read(file)
 
     # Known SO roles
