@@ -2,7 +2,7 @@ from opentrons import protocol_api
 from typing import List, Union, Optional, Tuple
 from abc import ABC, abstractmethod
 import math
-from utils import colors
+from pudu.utils import colors
 
 
 class SamplePreparation(ABC):
