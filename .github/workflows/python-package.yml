@@ -30,6 +30,10 @@ jobs:
         python -m pip install flake8 pytest opentrons
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+    - name: Install pudu package in development mode
+      run: |
+        pip install -e .
+
     - name: Lint with flake8
       run: |
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
