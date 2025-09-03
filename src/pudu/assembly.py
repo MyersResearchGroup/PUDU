@@ -32,7 +32,9 @@ class BaseAssembly(ABC):
                  dispense_rate: float = 1,
                  take_picture: bool = False,
                  take_video: bool = False,
-                 water_testing: bool = False):
+                 water_testing: bool = False,
+                 output_xlsx: bool = True,
+                 protocol_name: str = ''):
 
         self.volume_total_reaction = volume_total_reaction
         self.volume_part = volume_part
@@ -56,6 +58,8 @@ class BaseAssembly(ABC):
         self.take_picture = take_picture
         self.take_video = take_video
         self.water_testing = water_testing
+        self.output_xlsx = output_xlsx
+        self.protocol_name = protocol_name
 
         # Shared tracking dictionaries
         self.dict_of_parts_in_temp_mod_position = {}
@@ -270,6 +274,15 @@ class BaseAssembly(ABC):
             thermocycler_module.execute_profile(steps=profile, repetitions=75, block_max_volume=30)
             thermocycler_module.execute_profile(steps=denaturation, repetitions=1, block_max_volume=30)
             thermocycler_module.set_block_temperature(4)
+
+        if protocol.is_simulating():
+            if self.output_xlsx:
+                try:
+                    if not self.protocol_name:
+                        self.protocol_name = "Loop Assembly"
+                    self.get_xlsx_output(self.protocol_name)
+                except Exception as e:
+                    protocol.comment(f"Could not create Excel file: {e}")
 
         # Output results
         print('Parts and reagents in temp_module')
