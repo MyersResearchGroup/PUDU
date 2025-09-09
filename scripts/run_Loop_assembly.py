@@ -14,6 +14,5 @@ metadata = {
 'apiLevel': '2.14'}
 
 def run(protocol= protocol_api.ProtocolContext):
-
     pudu_loop_assembly = LoopAssembly(assemblies=assemblies,)
     pudu_loop_assembly.run(protocol)
