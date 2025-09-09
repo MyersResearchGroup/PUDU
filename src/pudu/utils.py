@@ -1,6 +1,7 @@
 import subprocess
 import time
 from typing import Optional
+import sbol2
 
 colors = [
     "#4040BF",   # Blue
