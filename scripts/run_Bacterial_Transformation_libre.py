@@ -473,3 +473,23 @@ class HeatShockTransformation(Transformation):
 
             well_index += wells_to_fill
 
+
+
+# metadata
+metadata = {
+'protocolName': 'PUDU Transformation',
+'author': 'Gonzalo Vidal <g.a.vidal-pena2@ncl.ac.uk>, refactored by Oscar Rodriguez',
+'description': 'Automated heat-shock transformation protocol',
+'apiLevel': '2.22'}
+
+def run(protocol= protocol_api.ProtocolContext):
+    # list_of_dna = ['GVD0011', 'GVD0013', 'GVD0015', 'GVD0016', 'GVD0019', 'GVD0020']
+    # list_of_dna = ['GVD0011']
+    list_of_dna = [('GVP0008', 'B0034', 'sfGFP', 'B0015', 'Odd_1', 'replicate_1'),
+                   ('GVP0008', 'B0034', 'sfGFP', 'B0015', 'Odd_1', 'replicate_2'),
+                   ('GVP0010', 'B0034', 'sfGFP', 'B0015', 'Odd_1', 'replicate_1'),
+                   ('GVP0010', 'B0034', 'sfGFP', 'B0015', 'Odd_1', 'replicate_2'),
+                   ('GVP0012', 'B0034', 'sfGFP', 'B0015', 'Odd_1', 'replicate_1'),
+                   ('GVP0012', 'B0034', 'sfGFP', 'B0015', 'Odd_1', 'replicate_2')]
+    pudu_transformation = HeatShockTransformation(list_of_dna= list_of_dna, competent_cells = 'DH5alpha', use_dna_96plate=True, water_testing=True)
+    pudu_transformation.run(protocol)
