@@ -1,4 +1,4 @@
-from pudu.assembly import sbol2_DNA_Assembly
+from pudu.assembly import SBOLLoopAssembly
 from pudu.utils import assemblyPlan_To_JSON
 from opentrons import protocol_api
 
@@ -13,6 +13,6 @@ metadata = {
 
 def run(protocol= protocol_api.ProtocolContext):
 
-    pudu_sbol2_assembly = sbol2_DNA_Assembly(assembly_JSON)
+    pudu_sbol2_assembly = SBOLLoopAssembly(assembly_JSON)
     pudu_sbol2_assembly.run(protocol)
     pudu_sbol2_assembly.get_xlsx_output('sbol2_assembly_output.xlsx')
