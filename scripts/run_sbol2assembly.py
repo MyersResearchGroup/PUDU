@@ -12,7 +12,7 @@ metadata = {
 'protocolName': 'SBOL2 DNA assembly',
 'author': 'Luke Dysart <luke.dysart@colorado.edu>',
 'description': 'Automated DNA assembly from SBOL2 Assembly Plan',
-'apiLevel': '2.13'}
+'apiLevel': '2.14'}
 
 def run(protocol= protocol_api.ProtocolContext):
 
