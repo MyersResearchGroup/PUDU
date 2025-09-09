@@ -1,5 +1,5 @@
 from pudu.assembly import SBOLLoopAssembly
-from pudu.utils import assemblyPlan_To_JSON
+from pudu.utils import assembly_plan_RDF_to_JSON
 from opentrons import protocol_api
 
 assembly_JSON = assembly_plan_RDF_to_JSON('../tests/validation_assembly1.xml')
@@ -15,4 +15,4 @@ def run(protocol= protocol_api.ProtocolContext):
 
     pudu_sbol2_assembly = SBOLLoopAssembly(assembly_JSON)
     pudu_sbol2_assembly.run(protocol)
-    pudu_sbol2_assembly.get_xlsx_output('sbol2_assembly_output.xlsx')
+    #pudu_sbol2_assembly.get_xlsx_output('sbol2_assembly_output.xlsx')
