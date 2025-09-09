@@ -1,8 +1,13 @@
 from pudu.assembly import SBOLLoopAssembly
 from pudu.utils import assembly_plan_RDF_to_JSON
 from opentrons import protocol_api
+from pathlib import Path
 
-assembly_JSON = assembly_plan_RDF_to_JSON('../tests/validation_assembly1.xml')
+# Get the absolute path to the tests directory relative to this script
+tests_dir = Path(__file__).parent.parent / "tests"
+file_path = tests_dir / "validation_assembly1.xml"
+
+assembly_JSON = assembly_plan_RDF_to_JSON(str(file_path))
 
 # metadata
 metadata = {
