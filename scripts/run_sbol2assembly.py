@@ -2,7 +2,7 @@ from pudu.assembly import SBOLLoopAssembly
 from pudu.utils import assemblyPlan_To_JSON
 from opentrons import protocol_api
 
-assembly_JSON = assemblyPlan_To_JSON('../tests/validation_assembly1.xml')
+assembly_JSON = assembly_plan_RDF_to_JSON('../tests/validation_assembly1.xml')
 
 # metadata
 metadata = {
