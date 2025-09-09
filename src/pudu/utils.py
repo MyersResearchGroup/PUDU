@@ -2,6 +2,7 @@ import subprocess
 import time
 from typing import Optional
 import sbol2
+import json
 
 colors = [
     "#4040BF",   # Blue
