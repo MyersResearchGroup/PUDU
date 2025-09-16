@@ -34,4 +34,4 @@ jobs:
 
     - name: Test scripts with opentrons_simulate
       run: |
-        pytest -v
+        pytest -s -v
