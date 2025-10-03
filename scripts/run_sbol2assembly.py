@@ -4,8 +4,8 @@ from opentrons import protocol_api
 from pathlib import Path
 
 # Get the absolute path to the tests directory relative to this script
-file_path = Path("tests/validation_assembly1.xml")
-assembly_JSON = assembly_plan_RDF_to_JSON(str(file_path))
+file_path = Path("output.json")
+assembly_JSON = str(file_path)
 
 # metadata
 metadata = {

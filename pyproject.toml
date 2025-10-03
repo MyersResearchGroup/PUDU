@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pudupy"
-version = "1.0.0b5"
+version = "1.0.0b6"
 description = "Protocol Unified Design Unit"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -27,7 +27,6 @@ classifiers = [
 dependencies = [
   "opentrons>=8.4.1",
   "xlsxwriter>=3.2.5",
-  "sbol2>=1.4.1",
 ]
 
 [project.optional-dependencies]
