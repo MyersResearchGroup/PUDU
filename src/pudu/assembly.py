@@ -14,6 +14,7 @@ class BaseAssembly(ABC):
     """
 
     def __init__(self,
+                 json_params: Dict = None,
                  volume_total_reaction: float = 20,
                  volume_part: float = 2,
                  volume_restriction_enzyme: float = 2,
@@ -36,30 +37,54 @@ class BaseAssembly(ABC):
                  output_xlsx: bool = True,
                  protocol_name: str = ''):
 
-        self.volume_total_reaction = volume_total_reaction
-        self.volume_part = volume_part
-        self.volume_restriction_enzyme = volume_restriction_enzyme
-        self.volume_t4_dna_ligase = volume_t4_dna_ligase
-        self.volume_t4_dna_ligase_buffer = volume_t4_dna_ligase_buffer
-        self.replicates = replicates
-        self.thermocycler_starting_well = thermocycler_starting_well
-        self.thermocycler_labware = thermocycler_labware
-        self.temperature_module_labware = temperature_module_labware
-        self.temperature_module_position = temperature_module_position
-        self.tiprack_labware = tiprack_labware
-        if tiprack_positions is None:
+        params = self._merge_params(json_params,{
+            'volume_total_reaction': volume_total_reaction,
+            'volume_part': volume_part,
+            'volume_restriction_enzyme': volume_restriction_enzyme,
+            'volume_t4_dna_ligase': volume_t4_dna_ligase,
+            'volume_t4_dna_ligase_buffer': volume_t4_dna_ligase_buffer,
+            'replicates': replicates,
+            'thermocycler_starting_well': thermocycler_starting_well,
+            'thermocycler_labware': thermocycler_labware,
+            'temperature_module_labware': temperature_module_labware,
+            'temperature_module_position': temperature_module_position,
+            'tiprack_labware': tiprack_labware,
+            'tiprack_positions': tiprack_positions,
+            'pipette': pipette,
+            'pipette_position': pipette_position,
+            'aspiration_rate': aspiration_rate,
+            'dispense_rate': dispense_rate,
+            'take_picture': take_picture,
+            'take_video': take_video,
+            'water_testing': water_testing,
+            'output_xlsx': output_xlsx,
+            'protocol_name': protocol_name
+        })
+
+        self.volume_total_reaction = params['volume_total_reaction']
+        self.volume_part = params['volume_part']
+        self.volume_restriction_enzyme = params['volume_restriction_enzyme']
+        self.volume_t4_dna_ligase = params['volume_t4_dna_ligase']
+        self.volume_t4_dna_ligase_buffer = params['volume_t4_dna_ligase_buffer']
+        self.replicates = params['replicates']
+        self.thermocycler_starting_well = params['thermocycler_starting_well']
+        self.thermocycler_labware = params['thermocycler_labware']
+        self.temperature_module_labware = params['temperature_module_labware']
+        self.temperature_module_position = params['temperature_module_position']
+        self.tiprack_labware = params['tiprack_labware']
+        if params['tiprack_positions'] is None:
             self.tiprack_positions = ['2', '3', '4', '5', '6', '9']
         else:
-            self.tiprack_positions = tiprack_positions
-        self.pipette = pipette
-        self.pipette_position = pipette_position
-        self.aspiration_rate = aspiration_rate
-        self.dispense_rate = dispense_rate
-        self.take_picture = take_picture
-        self.take_video = take_video
-        self.water_testing = water_testing
-        self.output_xlsx = output_xlsx
-        self.protocol_name = protocol_name
+            self.tiprack_positions =  params['tiprack_positions']
+        self.pipette = params['pipette']
+        self.pipette_position = params['pipette_position']
+        self.aspiration_rate = params['aspiration_rate']
+        self.dispense_rate = params['dispense_rate']
+        self.take_picture = params['take_picture']
+        self.take_video = params['take_video']
+        self.water_testing = params['water_testing']
+        self.output_xlsx = params['output_xlsx']
+        self.protocol_name = params['protocol_name']
 
         # Shared tracking dictionaries
         self.dict_of_parts_in_temp_mod_position = {}
@@ -80,6 +105,82 @@ class BaseAssembly(ABC):
             'current_batch': 1,
             'total_batches': 1
         }
+
+    def _merge_params(self, json_params: Dict, kwargs_params: Dict) -> Dict:
+        """
+        Merge parameters with precedence: defaults <- advanced_params <- kwargs
+
+        Args:
+            advanced_params: Dictionary of parameters from JSON/dict (optional)
+            kwargs_params: Dictionary of parameters from function kwargs
+
+        Returns:
+            Merged parameter dictionary
+
+        Raises:
+            ValueError: If advanced_params contains unknown parameters
+        """
+        # Define all valid parameter names with their defaults
+        valid_params = {
+            'volume_total_reaction': 20,
+            'volume_part': 2,
+            'volume_restriction_enzyme': 2,
+            'volume_t4_dna_ligase': 4,
+            'volume_t4_dna_ligase_buffer': 2,
+            'replicates': 1,
+            'thermocycler_starting_well': 0,
+            'thermocycler_labware': 'nest_96_wellplate_100ul_pcr_full_skirt',
+            'temperature_module_labware': 'opentrons_24_aluminumblock_nest_1.5ml_snapcap',
+            'temperature_module_position': '1',
+            'tiprack_labware': 'opentrons_96_tiprack_20ul',
+            'tiprack_positions': None,
+            'pipette': 'p20_single_gen2',
+            'pipette_position': 'left',
+            'aspiration_rate': 0.5,
+            'dispense_rate': 1,
+            'take_picture': False,
+            'take_video': False,
+            'water_testing': False,
+            'output_xlsx': True,
+            'protocol_name': ''
+        }
+
+        # Start with defaults
+        merged = valid_params.copy()
+
+        # Apply json_params if provided
+        if json_params is not None:
+            self._validate_param_structure(json_params, valid_params)
+            merged.update(json_params)
+
+        # Apply kwargs (checking against defaults to see what was explicitly passed)
+        # Only update if the kwarg value differs from the default
+        for key, value in kwargs_params.items():
+            if key in valid_params:
+                # Always use kwargs value, even if it matches default
+                # This ensures explicit kwargs override advanced_params
+                if json_params is None or key not in json_params or value != valid_params[key]:
+                    merged[key] = value
+
+        return merged
+
+    def _validate_param_structure(self, advanced_params: Dict, valid_params: Dict):
+        """
+        Validate that advanced_params only contains known parameter names.
+
+        Args:
+            advanced_params: Dictionary to validate
+            valid_params: Dictionary of valid parameter names
+
+        Raises:
+            ValueError: If unknown parameters are found
+        """
+        unknown_params = set(advanced_params.keys()) - set(valid_params.keys())
+        if unknown_params:
+            raise ValueError(
+                f"Unknown parameters in advanced_params: {unknown_params}. "
+                f"Valid parameters are: {set(valid_params.keys())}"
+            )
 
     @abstractmethod
     def process_assemblies(self):
