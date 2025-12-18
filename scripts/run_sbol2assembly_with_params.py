@@ -1,6 +1,3 @@
-from pudu.assembly import SBOLLoopAssembly
-from opentrons import protocol_api
-
 # Example SBOL assemblies (would typically come from SynBioSuite)
 assemblies = [
     {
@@ -26,13 +23,20 @@ assemblies = [
         "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1"
     }
 ]
+
 # Advanced parameters
 advanced_params = {
-    "volume_part": 1,
+    "volume_part": 3,
+    "volume_total_reaction": 25,
     "replicates": 2,  # Want duplicates for this critical experiment
     "thermocycler_starting_well": 0,
     "protocol_name": "SBOL_GFP_RFP_Assembly"
 }
+
+
+from pudu.assembly import SBOLLoopAssembly
+from opentrons import protocol_api
+
 
 metadata = {
     'protocolName': 'PUDU SBOL Loop Assembly with Advanced Parameters',
@@ -56,7 +60,7 @@ def run(protocol: protocol_api.ProtocolContext):
     protocol.comment("=== Running with advanced_params ===")
     pudu_assembly = SBOLLoopAssembly(
         assemblies=assemblies,
-        json_params=advanced_params
+        json_params=advanced_params,
     )
     pudu_assembly.run(protocol)
 

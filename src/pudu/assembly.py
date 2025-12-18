@@ -182,6 +182,38 @@ class BaseAssembly(ABC):
                 f"Valid parameters are: {set(valid_params.keys())}"
             )
 
+    def _validate_reaction_volumes(self, num_parts: int):
+        """
+        Validate that reaction volumes are physically possible.
+
+        Args:
+            num_parts: Number of DNA parts (including backbone) in the assembly
+
+        Raises:
+            ValueError: If volumes exceed total reaction volume
+        """
+        volume_reagents = (self.volume_restriction_enzyme +
+                          self.volume_t4_dna_ligase +
+                          self.volume_t4_dna_ligase_buffer)
+
+        total_parts_volume = self.volume_part * num_parts
+        total_needed = volume_reagents + total_parts_volume
+
+        if total_needed >= self.volume_total_reaction:
+            water_volume = self.volume_total_reaction - total_needed
+            raise ValueError(
+                f"Reaction volume error: Cannot fit {num_parts} parts into {self.volume_total_reaction}µL reaction.\n"
+                f"  Required volumes:\n"
+                f"    - Reagents (enzyme + ligase + buffer): {volume_reagents}µL\n"
+                f"    - Parts ({num_parts} × {self.volume_part}µL): {total_parts_volume}µL\n"
+                f"    - Water: {water_volume}µL (NEGATIVE!)\n"
+                f"  Total needed: {total_needed}µL\n"
+                f"  Solutions:\n"
+                f"    1. Increase 'volume_total_reaction' to at least {total_needed + 1}µL\n"
+                f"    2. Decrease 'volume_part' to at most {(self.volume_total_reaction - volume_reagents - 1) / num_parts:.1f}µL\n"
+                f"    3. Decrease reagent volumes"
+            )
+
     @abstractmethod
     def process_assemblies(self):
         """Process input assemblies - format-specific implementation"""
@@ -583,8 +615,9 @@ class Domestication(BaseAssembly):
                                      mix_before=self.volume_part, touch_tip=True, drop_tip=False)
 
                 # Remove air bubbles with mixing
+                mix_volume = min(self.volume_total_reaction, pipette.max_volume)
                 for _ in range(int(self.volume_total_reaction / 10)):
-                    self.liquid_transfer(protocol=protocol, pipette=pipette, volume=self.volume_total_reaction,
+                    self.liquid_transfer(protocol=protocol, pipette=pipette, volume=mix_volume,
                                          source=dest_well.bottom(), dest=dest_well.bottom(8),
                                          asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False,
                                          touch_tip=True)
@@ -641,6 +674,8 @@ class Domestication(BaseAssembly):
                 f'wells. Number of assemblies needed is {wells_needed} '
                 f'({len(self.parts_list)} parts × {self.replicates} replicates).'
             )
+
+        self._validate_reaction_volumes(num_parts=2)
 
     def _reset_assembly_state(self):
         """Reset assembly processing state"""
@@ -816,6 +851,11 @@ class ManualLoopAssembly(BaseAssembly):
                 f'combinations. Number of combinations in the protocol are {wells_needed}.'
             )
 
+        # Validate reaction volumes for all combinations
+        for combination in self.odd_combinations + self.even_combinations:
+            num_parts = len(combination)
+            self._validate_reaction_volumes(num_parts)
+
     def _process_combinations(self, protocol, pipette, combinations, restriction_enzyme,
                               thermo_plate, alum_block, dd_h2o, t4_dna_ligase_buffer,
                               t4_dna_ligase, volume_reagents, thermocycler_well_counter):
@@ -863,8 +903,9 @@ class ManualLoopAssembly(BaseAssembly):
                                              mix_before=self.volume_part, touch_tip=True)
 
                 # Remove air bubbles
+                mix_volume = min(self.volume_total_reaction, pipette.max_volume)
                 for _ in range(int(self.volume_total_reaction / 10)):
-                    self.liquid_transfer(protocol=protocol, pipette=pipette, volume=self.volume_total_reaction,
+                    self.liquid_transfer(protocol=protocol, pipette=pipette, volume=mix_volume,
                                          source=dest_well.bottom(), dest=dest_well.bottom(8),
                                          asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False, touch_tip=True)
                 pipette.drop_tip()
@@ -998,8 +1039,9 @@ class SBOLLoopAssembly(BaseAssembly):
                                              mix_before=self.volume_part, touch_tip=True)
 
                 # Remove air bubbles
+                mix_volume = min(self.volume_total_reaction, pipette.max_volume)
                 for _ in range(int(self.volume_total_reaction / 10)):
-                    self.liquid_transfer(protocol=protocol, pipette=pipette, volume=self.volume_total_reaction,
+                    self.liquid_transfer(protocol=protocol, pipette=pipette, volume=mix_volume,
                                          source=dest_well.bottom(), dest=dest_well.bottom(8),
                                          asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False, touch_tip=True)
                 pipette.drop_tip()
@@ -1069,6 +1111,11 @@ class SBOLLoopAssembly(BaseAssembly):
                 f'This protocol only supports assemblies with up to {available_wells} '
                 f'combinations. Number of assemblies in the protocol are {wells_needed}.'
             )
+
+        # Validate reaction volumes for each assembly
+        for assembly_combo in self.assembly_combinations:
+            num_parts = len(assembly_combo['parts'])
+            self._validate_reaction_volumes(num_parts)
 
 
 class LoopAssembly:
