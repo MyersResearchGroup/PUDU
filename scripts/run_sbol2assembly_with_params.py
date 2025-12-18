@@ -29,6 +29,7 @@ advanced_params = {
     "volume_part": 3,
     "volume_total_reaction": 25,
     "replicates": 2,  # Want duplicates for this critical experiment
+    "initial_tip": "H10",
     "thermocycler_starting_well": 0,
     "protocol_name": "SBOL_GFP_RFP_Assembly"
 }

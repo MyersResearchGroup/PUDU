@@ -29,6 +29,7 @@ class BaseAssembly(ABC):
                  tiprack_positions: List[str] = None,
                  pipette: str = 'p20_single_gen2',
                  pipette_position: str = 'left',
+                 initial_tip: str = None,
                  aspiration_rate: float = 0.5,
                  dispense_rate: float = 1,
                  take_picture: bool = False,
@@ -52,6 +53,7 @@ class BaseAssembly(ABC):
             'tiprack_positions': tiprack_positions,
             'pipette': pipette,
             'pipette_position': pipette_position,
+            'initial_tip' : initial_tip,
             'aspiration_rate': aspiration_rate,
             'dispense_rate': dispense_rate,
             'take_picture': take_picture,
@@ -78,6 +80,7 @@ class BaseAssembly(ABC):
             self.tiprack_positions =  params['tiprack_positions']
         self.pipette = params['pipette']
         self.pipette_position = params['pipette_position']
+        self.initial_tip = params['initial_tip']
         self.aspiration_rate = params['aspiration_rate']
         self.dispense_rate = params['dispense_rate']
         self.take_picture = params['take_picture']
@@ -136,6 +139,7 @@ class BaseAssembly(ABC):
             'tiprack_positions': None,
             'pipette': 'p20_single_gen2',
             'pipette_position': 'left',
+            'initial_tip': None,
             'aspiration_rate': 0.5,
             'dispense_rate': 1,
             'take_picture': False,
@@ -214,6 +218,51 @@ class BaseAssembly(ABC):
                 f"    3. Decrease reagent volumes"
             )
 
+    def _well_to_index(self, well_name: str) -> int:
+        """
+        Convert well name (e.g., 'A1', 'H12') to 0-based index in 96-well plate.
+
+        Args:
+            well_name: Well position like 'A1', 'B3', 'H12'
+
+        Returns:
+            Zero-based index (0-95) for the well
+
+        Raises:
+            ValueError: If well_name format is invalid
+        """
+        if not well_name or len(well_name) < 2:
+            raise ValueError(f"Invalid well name: '{well_name}'. Expected format like 'A1', 'B3', 'H12'")
+
+        row = well_name[0]
+        try:
+            col = int(well_name[1:])
+        except ValueError:
+            raise ValueError(f"Invalid well name: '{well_name}'. Column must be a number (e.g., 'A1', 'H12')")
+
+        if row not in 'ABCDEFGH':
+            raise ValueError(f"Invalid well name: '{well_name}'. Row must be A-H")
+
+        if col < 1 or col > 12:
+            raise ValueError(f"Invalid well name: '{well_name}'. Column must be 1-12")
+
+        row_index = ord(row) - ord('A')
+        col_index = col - 1
+        return row_index + (col_index * 8)
+
+    def _tips_available_from_position(self, well_name: str) -> int:
+        """
+        Calculate how many tips are available starting from a given position.
+
+        Args:
+            well_name: Starting well position like 'A1', 'H12'
+
+        Returns:
+            Number of tips available from that position to H12
+        """
+        start_index = self._well_to_index(well_name)
+        return 96 - start_index
+
     @abstractmethod
     def process_assemblies(self):
         """Process input assemblies - format-specific implementation"""
@@ -239,7 +288,22 @@ class BaseAssembly(ABC):
     def setup_tip_management(self, protocol):
         """Setup batch tip management for high-throughput applications."""
         total_tips_needed = self._calculate_total_tips_needed()
-        tip_racks_needed = (total_tips_needed + 95) // 96
+
+        first_rack_tips = 96
+        if self.initial_tip:
+            try:
+                first_rack_tips = self._tips_available_from_position(self.initial_tip)
+                protocol.comment(f"Starting from tip {self.initial_tip} ({first_rack_tips} tips available on first rack)")
+            except ValueError as e:
+                raise ValueError(f"Error with initial_tip parameter: {e}")
+
+        # Calculate racks needed, accounting for the partially used first rack
+        if total_tips_needed <= first_rack_tips:
+            tip_racks_needed = 1
+        else:
+            remaining_tips = total_tips_needed - first_rack_tips
+            additional_racks = (remaining_tips + 95) // 96
+            tip_racks_needed = 1 + additional_racks
 
         available_deck_slots = self.tiprack_positions
         max_racks_on_deck = len(available_deck_slots)
@@ -348,6 +412,9 @@ class BaseAssembly(ABC):
 
         all_tip_racks = self.setup_tip_management(protocol)
         pipette = protocol.load_instrument(self.pipette, self.pipette_position, tip_racks=all_tip_racks)
+        if self.initial_tip:
+            pipette.starting_tip = self.tip_management['on_deck_racks'][0][self.initial_tip]
+            protocol.comment(f"Pipette will start from tip {self.initial_tip}")
 
         # Load common reagents (shared)
         dd_h2o = self._load_reagent(protocol, module_labware=alum_block, well_position=0,
