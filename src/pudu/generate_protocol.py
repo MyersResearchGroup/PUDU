@@ -26,7 +26,7 @@ DEFAULT_METADATA = {
     'protocolName': 'PUDU Protocol',
     'author': 'Researcher',
     'description': 'Automated protocol',
-    'apiLevel': '2.20'
+    'apiLevel': '2.21'
 }
 
 # Protocol type configurations
