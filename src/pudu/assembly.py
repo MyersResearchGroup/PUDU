@@ -1,6 +1,6 @@
 import xlsxwriter
 from opentrons import protocol_api
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fnmatch import fnmatch
 from itertools import product
 import json
@@ -14,7 +14,7 @@ class BaseAssembly(ABC):
     """
 
     def __init__(self,
-                 json_params: Dict = None,
+                 json_params: Optional[Dict] = None,
                  volume_total_reaction: float = 20,
                  volume_part: float = 2,
                  volume_restriction_enzyme: float = 2,
@@ -26,10 +26,10 @@ class BaseAssembly(ABC):
                  temperature_module_labware: str = 'opentrons_24_aluminumblock_nest_1.5ml_snapcap',
                  temperature_module_position: str = '1',
                  tiprack_labware: str = 'opentrons_96_tiprack_20ul',
-                 tiprack_positions: List[str] = None,
+                 tiprack_positions: Optional[List[str]] = None,
                  pipette: str = 'p20_single_gen2',
                  pipette_position: str = 'left',
-                 initial_tip: str = None,
+                 initial_tip: Optional[str] = None,
                  aspiration_rate: float = 0.5,
                  dispense_rate: float = 1,
                  take_picture: bool = False,
@@ -38,7 +38,7 @@ class BaseAssembly(ABC):
                  output_xlsx: bool = True,
                  protocol_name: str = ''):
 
-        params = self._merge_params(json_params,{
+        kwargs_params = {
             'volume_total_reaction': volume_total_reaction,
             'volume_part': volume_part,
             'volume_restriction_enzyme': volume_restriction_enzyme,
@@ -61,7 +61,9 @@ class BaseAssembly(ABC):
             'water_testing': water_testing,
             'output_xlsx': output_xlsx,
             'protocol_name': protocol_name
-        })
+        }
+
+        params = self._merge_params(json_params, kwargs_params)
 
         self.volume_total_reaction = params['volume_total_reaction']
         self.volume_part = params['volume_part']
@@ -550,8 +552,33 @@ class Domestication(BaseAssembly):
     Each part is assembled separately with the backbone to create domesticated parts.
     """
 
-    def __init__(self, assemblies: List[Dict], *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self,
+                 assembly_data: Optional[Dict] = None,
+                 json_params: Optional[str] = None,
+                 assemblies: Optional[List[Dict]] = None,
+                 *args, **kwargs):
+        """
+        Initialize Domestication Assembly protocol.
+
+        Args:
+            assembly_data: Dict containing 'assemblies' key (new standardized approach)
+            advanced_params: Optional advanced parameters
+            assemblies: List of assembly dicts (backward compatibility)
+            *args, **kwargs: Passed to BaseAssembly
+        """
+        # Handle parameter precedence: assembly_data <- assemblies kwarg
+        if assembly_data is not None:
+            if 'assemblies' in assembly_data:
+                assemblies = assembly_data['assemblies']
+            else:
+                # Allow passing assemblies directly in assembly_data for flexibility
+                assemblies = assembly_data
+
+        # Validate that assemblies were provided
+        if assemblies is None:
+            raise ValueError("Must provide assemblies either via assembly_data or assemblies parameter")
+
+        super().__init__(json_params=json_params, *args, **kwargs)
         self.assemblies = assemblies
         self.parts_list = []
         self.backbone = ""
@@ -742,7 +769,7 @@ class Domestication(BaseAssembly):
                 f'({len(self.parts_list)} parts × {self.replicates} replicates).'
             )
 
-        self._validate_reaction_volumes(num_parts=2)
+        self._validate_reaction_volumes(num_parts=len(self.parts_list))
 
     def _reset_assembly_state(self):
         """Reset assembly processing state"""
@@ -757,7 +784,33 @@ class ManualLoopAssembly(BaseAssembly):
     Supports Odd/Even pattern detection for automatic enzyme selection.
     """
 
-    def __init__(self, assemblies: List[Dict], *args, **kwargs):
+    def __init__(self,
+                 assembly_data: Optional[Dict] = None,
+                 json_params: Optional[str] = None,
+                 assemblies: Optional[List[Dict]] = None,
+                 *args, **kwargs):
+        """
+        Initialize Manual Loop Assembly protocol.
+
+        Args:
+            assembly_data: Dict containing 'assemblies' key (new standardized approach)
+            json_params: Optional advanced parameters
+            assemblies: List of assembly dicts (backward compatibility)
+            *args, **kwargs: Passed to BaseAssembly
+        """
+        # Handle parameter precedence: assembly_data <- assemblies kwarg
+        if assembly_data is not None:
+            if 'assemblies' in assembly_data:
+                assemblies = assembly_data['assemblies']
+            else:
+                # Allow passing assemblies directly in assembly_data for flexibility
+                assemblies = assembly_data
+
+        # Validate that assemblies were provided
+        if assemblies is None:
+            raise ValueError("Must provide assemblies either via assembly_data or assemblies parameter")
+
+        super().__init__(json_params=json_params, *args, **kwargs)
         super().__init__(*args, **kwargs)
         self.assemblies = assemblies
         self.pattern_odd = 'Odd*'
@@ -991,8 +1044,33 @@ class SBOLLoopAssembly(BaseAssembly):
     Each assembly dictionary represents one specific construct to build.
     """
 
-    def __init__(self, assemblies: List[Dict], *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self,
+                 assembly_data: Optional[Dict] = None,
+                 json_params: Optional[str] = None,
+                 assemblies: Optional[List[Dict]] = None,
+                 *args, **kwargs):
+        """
+        Initialize SBOL Loop Assembly protocol.
+
+        Args:
+            assembly_data: Dict containing 'assemblies' key (new standardized approach)
+            advanced_params: Optional advanced parameters
+            assemblies: List of assembly dicts (backward compatibility)
+            *args, **kwargs: Passed to BaseAssembly
+        """
+        # Handle parameter precedence: assembly_data <- assemblies kwarg
+        if assembly_data is not None:
+            if 'assemblies' in assembly_data:
+                assemblies = assembly_data['assemblies']
+            else:
+                # Allow passing assemblies directly in assembly_data for flexibility
+                assemblies = assembly_data
+
+        # Validate that assemblies were provided
+        if assemblies is None:
+            raise ValueError("Must provide assemblies either via assembly_data or assemblies parameter")
+
+        super().__init__(json_params=json_params, *args, **kwargs)
         self.assemblies = assemblies
         self.parts_set = set()
         self.backbone_set = set()
