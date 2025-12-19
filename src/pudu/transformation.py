@@ -287,6 +287,27 @@ class HeatShockTransformation(Transformation):
         self.dict_of_parts_in_temp_mod_position = {}
         self.dict_of_parts_in_thermocycler = {}
 
+    def _export_plating_input(self, protocol):
+        """
+        Export plating input JSON during simulation.
+        Args:
+            protocol: Protocol context
+        """
+        import json
+
+        plating_input = {
+            'bacterium_locations': self.dict_of_parts_in_thermocycler
+        }
+
+        output_path = 'plating_input.json'
+        with open(output_path, 'w') as f:
+            json.dump(plating_input, f, indent=2)
+
+        protocol.comment("\n" + "="*70)
+        protocol.comment(f"Generated {output_path} for next protocol")
+        protocol.comment(f"  Bacteria locations: {len(self.dict_of_parts_in_thermocycler)}")
+        protocol.comment("="*70)
+
     def liquid_transfer(self, protocol, pipette, volume, source, dest,
                         asp_rate: float = 0.5, disp_rate: float = 1.0,
                         blow_out: bool = True, touch_tip: bool = False,
@@ -394,6 +415,13 @@ class HeatShockTransformation(Transformation):
         ]
         if not self.water_testing:
             thermocycler_module.execute_profile(steps=recovery, repetitions=1, block_max_volume=30)
+
+        # Export plating input for next protocol (simulation only)
+        if protocol.is_simulating():
+            try:
+                self._export_plating_input(protocol)
+            except Exception as e:
+                protocol.comment(f"Could not export plating input: {e}")
 
         # output
         print('Strain and media tube in temp_mod')

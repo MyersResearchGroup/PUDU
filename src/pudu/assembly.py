@@ -485,6 +485,11 @@ class BaseAssembly(ABC):
                     self.get_xlsx_output(self.protocol_name)
                 except Exception as e:
                     protocol.comment(f"Could not create Excel file: {e}")
+            # Export transformation input for next protocol (simulation only)
+            try:
+                self._export_transformation_input(protocol)
+            except Exception as e:
+                protocol.comment(f"Could not export transformation input: {e}")
 
         # Output results
         print('Parts and reagents in temp_module')
@@ -495,6 +500,30 @@ class BaseAssembly(ABC):
         print(self.dna_list_for_transformation_protocol)
 
     # Helper methods (shared)
+    def _export_transformation_input(self, protocol, competent_cells='DH5alpha'):
+        """
+        Export transformation input JSON during simulation.
+
+        Args:
+            protocol: Protocol context
+            competent_cells: Competent cells to use for transformation (default: DH5alpha)
+        """
+
+        transformation_input = {
+            'list_of_dna': self.dna_list_for_transformation_protocol,
+            'competent_cells': competent_cells
+        }
+
+        output_path = 'transformation_input.json'
+        with open(output_path, 'w') as f:
+            json.dump(transformation_input, f, indent=2)
+
+        protocol.comment("\n" + "="*70)
+        protocol.comment(f"Generated {output_path} for next protocol")
+        protocol.comment(f"  DNA constructs: {len(self.dna_list_for_transformation_protocol)}")
+        protocol.comment(f"  Competent cells: {competent_cells}")
+        protocol.comment("="*70)
+
     def _load_reagent(self, protocol, module_labware, well_position, name, description=None,
                       volume=1000, color_index=None):
         """Load a reagent or DNA part onto the temperature module."""
@@ -720,7 +749,7 @@ class Domestication(BaseAssembly):
                 # Track assembly
                 assembly_name = f"Part: {part}, Replicate: {r + 1}"
                 self.dict_of_parts_in_thermocycler[assembly_name] = dest_well_name
-                self.dna_list_for_transformation_protocol.append((self.backbone, part, f'replicate_{r + 1}'))
+                self.dna_list_for_transformation_protocol.append(f"{part}_rep{r + 1}")
 
                 thermocycler_well_counter += 1
 
@@ -1032,7 +1061,8 @@ class ManualLoopAssembly(BaseAssembly):
 
                 # Track combination
                 self.dict_of_parts_in_thermocycler[f"Replicate: {r + 1}, Combination: {combination}"] = dest_well_name
-                self.dna_list_for_transformation_protocol.append(combination + (f'replicate_{r + 1}',))
+                combination_name = "_".join(combination)
+                self.dna_list_for_transformation_protocol.append(f"{combination_name}_rep{r + 1}")
                 thermocycler_well_counter += 1
 
         return thermocycler_well_counter
@@ -1193,7 +1223,7 @@ class SBOLLoopAssembly(BaseAssembly):
 
                 # Track assembly
                 self.dict_of_parts_in_thermocycler[f"Replicate: {r + 1}, Product: {product_name}"] = dest_well_name
-                self.dna_list_for_transformation_protocol.append(tuple(parts + [f'replicate_{r + 1}']))
+                self.dna_list_for_transformation_protocol.append(f"{product_name}_rep{r + 1}")
                 thermocycler_well_counter += 1
 
         return thermocycler_well_counter
