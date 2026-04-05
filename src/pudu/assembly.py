@@ -5,7 +5,35 @@ from fnmatch import fnmatch
 from itertools import product
 import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
 from pudu.utils import Camera, colors
+
+
+@dataclass
+class SourceMaterialRecord:
+    """Metadata for a source material loaded on deck."""
+    display_name: str
+    uri: Optional[str]
+    module_name: str
+    labware_name: str
+    well: str
+
+
+@dataclass
+class ManualProtocolEvent:
+    """Structured event used to render human-readable manual instructions."""
+    event_type: str
+    volume_ul: Optional[float]
+    material_name: str
+    material_uri: Optional[str]
+    source_module: str
+    source_labware: str
+    source_well: str
+    dest_module: str
+    dest_labware: str
+    dest_well: str
+    reaction_label: Optional[str] = None
 
 class BaseAssembly(ABC):
     """
@@ -97,6 +125,11 @@ class BaseAssembly(ABC):
         self.dna_list_for_transformation_protocol = []
         self.product_uri_to_wells = {}
         self.xlsx_output = None
+        self.deck_setup_records = []
+        self.source_metadata_by_well = {}
+        self.manual_protocol_events = []
+        self.reaction_destination_records = []
+        self.manual_protocol_output_path = None
 
         #Initialize Camera
         self.camera = Camera()
@@ -347,7 +380,7 @@ class BaseAssembly(ABC):
                         blow_out: bool = True, touch_tip: bool = False,
                         mix_before: float = 0.0, mix_after: float = 0.0,
                         mix_reps: int = 3, new_tip: bool = True,
-                        drop_tip: bool = True):
+                        drop_tip: bool = True, record_event: bool = True):
         if new_tip:
             if self._check_if_swap_needed():
                 self._perform_tip_rack_batch_swap(protocol)
@@ -375,6 +408,205 @@ class BaseAssembly(ABC):
 
         if drop_tip:
             pipette.drop_tip()
+
+        if record_event:
+            self._record_transfer_event(volume=volume, source=source, dest=dest)
+
+    def _extract_well_from_location(self, maybe_well_or_location):
+        """Return a Well-like object from Well or Location inputs."""
+        if hasattr(maybe_well_or_location, 'well_name'):
+            return maybe_well_or_location
+        if hasattr(maybe_well_or_location, 'labware') and hasattr(maybe_well_or_location.labware, 'well_name'):
+            return maybe_well_or_location.labware
+        return None
+
+    def _describe_well_location(self, maybe_well_or_location):
+        """Create standardized module/labware/well metadata for source/destination references."""
+        well = self._extract_well_from_location(maybe_well_or_location)
+        if well is None:
+            return {
+                "module_name": "unknown module",
+                "labware_name": "unknown labware",
+                "well_name": "unknown"
+            }
+
+        labware = getattr(well, 'parent', None)
+        module = getattr(labware, 'parent', None)
+
+        module_name = "deck"
+        if module is not None and module is not protocol_api.OFF_DECK:
+            module_class_name = module.__class__.__name__.lower()
+            if "temperature" in module_class_name:
+                module_name = "temperature module"
+            elif "thermocycler" in module_class_name:
+                module_name = "thermocycler module"
+            else:
+                module_name = getattr(module, 'name', None) or module_class_name.replace("context", "").strip()
+
+        labware_name = getattr(labware, 'load_name', None) or getattr(labware, 'name', None) or "labware"
+
+        return {
+            "module_name": module_name,
+            "labware_name": labware_name,
+            "well_name": well.well_name
+        }
+
+    def _record_deck_item(self, kind: str, name: str, location: str, details: Optional[str] = None):
+        """Record deck setup information for manual protocol rendering."""
+        self.deck_setup_records.append({
+            "kind": kind,
+            "name": name,
+            "location": str(location),
+            "details": details or ""
+        })
+
+    def _record_transfer_event(self, volume, source, dest):
+        """Record transfer/mix events from shared transfer helper."""
+        source_location = self._describe_well_location(source)
+        dest_location = self._describe_well_location(dest)
+
+        source_key = (
+            source_location["module_name"],
+            source_location["labware_name"],
+            source_location["well_name"]
+        )
+        source_metadata = self.source_metadata_by_well.get(source_key, {})
+
+        is_mix = (
+            source_location["module_name"] == dest_location["module_name"] and
+            source_location["labware_name"] == dest_location["labware_name"] and
+            source_location["well_name"] == dest_location["well_name"] and
+            source_location["well_name"] != "unknown"
+        )
+
+        if is_mix:
+            material_name = f"reaction in {dest_location['well_name']}"
+        else:
+            material_name = source_metadata.get("display_name", "material")
+
+        self.manual_protocol_events.append(
+            ManualProtocolEvent(
+                event_type="mix" if is_mix else "transfer",
+                volume_ul=volume,
+                material_name=material_name,
+                material_uri=source_metadata.get("uri"),
+                source_module=source_location["module_name"],
+                source_labware=source_location["labware_name"],
+                source_well=source_location["well_name"],
+                dest_module=dest_location["module_name"],
+                dest_labware=dest_location["labware_name"],
+                dest_well=dest_location["well_name"]
+            )
+        )
+
+    def _record_mix_event(self, destination_well, volume):
+        """Record an explicit mixing step for a destination reaction well."""
+        dest_location = self._describe_well_location(destination_well)
+        self.manual_protocol_events.append(
+            ManualProtocolEvent(
+                event_type="mix",
+                volume_ul=volume,
+                material_name=f"reaction in {dest_location['well_name']}",
+                material_uri=None,
+                source_module=dest_location["module_name"],
+                source_labware=dest_location["labware_name"],
+                source_well=dest_location["well_name"],
+                dest_module=dest_location["module_name"],
+                dest_labware=dest_location["labware_name"],
+                dest_well=dest_location["well_name"]
+            )
+        )
+
+    def _record_reaction_destination(self, reaction_label: str, destination_well: str,
+                                     reaction_uri: Optional[str] = None):
+        """Record construct/reaction destination mapping."""
+        self.reaction_destination_records.append({
+            "reaction_label": reaction_label,
+            "reaction_uri": reaction_uri,
+            "destination_well": destination_well
+        })
+
+    def generate_manual_protocol(self, output_path: Optional[str] = None):
+        """Render a Markdown manual protocol generated from structured events."""
+        protocol_name = self.protocol_name or self.__class__.__name__
+        if output_path is None:
+            safe_name = protocol_name.lower().replace(" ", "_")
+            output_path = f"{safe_name}_manual_protocol.md"
+
+        output_file = Path(output_path)
+
+        source_records = sorted(
+            self.source_metadata_by_well.values(),
+            key=lambda item: (item["module_name"], item["labware_name"], item["well"])
+        )
+        reaction_records = sorted(
+            self.reaction_destination_records,
+            key=lambda item: self._well_to_index(item["destination_well"])
+            if item["destination_well"] != "unknown" else 999
+        )
+
+        with output_file.open("w", encoding="utf-8") as f:
+            f.write(f"# {protocol_name} Manual Protocol\n\n")
+            f.write(
+                "This document is a human-readable version of the simulated OT-2 assembly workflow. "
+                "Follow these steps manually to reproduce the same transfer sequence used in simulation.\n\n"
+            )
+            f.write("## Inputs / assumptions\n")
+            f.write("- Generated from structured transfer events captured during simulation.\n")
+            f.write("- Volumes are reported in µL.\n")
+            f.write("- Follow normal sterile technique and safety guidance for your lab.\n\n")
+
+            f.write("## Deck and reagent setup\n")
+            if self.deck_setup_records:
+                for item in self.deck_setup_records:
+                    detail_suffix = f" ({item['details']})" if item["details"] else ""
+                    f.write(f"- {item['kind']}: **{item['name']}** at deck position **{item['location']}**{detail_suffix}\n")
+            else:
+                f.write("- Deck setup not captured.\n")
+            f.write("\n")
+
+            f.write("## Source materials table\n")
+            f.write("| Material | URI | Source module | Source labware | Source well |\n")
+            f.write("| --- | --- | --- | --- | --- |\n")
+            for material in source_records:
+                f.write(
+                    f"| {material['display_name']} | {material.get('uri') or '-'} | "
+                    f"{material['module_name']} | {material['labware_name']} | {material['well']} |\n"
+                )
+            f.write("\n")
+
+            f.write("## Reaction destination table\n")
+            f.write("| Reaction / construct | URI | Destination well |\n")
+            f.write("| --- | --- | --- |\n")
+            for reaction in reaction_records:
+                f.write(
+                    f"| {reaction['reaction_label']} | {reaction.get('reaction_uri') or '-'} | "
+                    f"{reaction['destination_well']} |\n"
+                )
+            f.write("\n")
+
+            f.write("## Step-by-step instructions\n")
+            for i, event in enumerate(self.manual_protocol_events, start=1):
+                if event.event_type == "mix":
+                    f.write(
+                        f"{i}. Mix the reaction in {event.dest_module} well {event.dest_well} "
+                        f"by pipetting up and down at {event.volume_ul} µL.\n"
+                    )
+                    continue
+
+                uri_text = f" (URI: {event.material_uri})" if event.material_uri else ""
+                f.write(
+                    f"{i}. Add {event.volume_ul} µL of {event.material_name}{uri_text} from "
+                    f"{event.source_module} well {event.source_well} to {event.dest_module} well {event.dest_well}.\n"
+                )
+            f.write("\n")
+
+            f.write("## Notes / warnings\n")
+            f.write("- This file is generated only in simulation mode.\n")
+            f.write("- Always verify reagent concentrations and part identities before running manually.\n")
+
+        self.manual_protocol_output_path = str(output_file)
+        return self.manual_protocol_output_path
 
     def get_xlsx_output(self, name: str):
         workbook = xlsxwriter.Workbook(f"{name}.xlsx")
@@ -409,12 +641,22 @@ class BaseAssembly(ABC):
         temperature_module = protocol.load_module(module_name='temperature module',
                                                   location=self.temperature_module_position)
         alum_block = temperature_module.load_labware(self.temperature_module_labware)
+        self._record_deck_item("Module", "temperature module", self.temperature_module_position)
+        self._record_deck_item("Labware", self.temperature_module_labware, self.temperature_module_position,
+                               details="on temperature module")
 
         thermocycler_module = protocol.load_module('thermocycler module')
         thermo_plate = thermocycler_module.load_labware(name=self.thermocycler_labware)
+        self._record_deck_item("Module", "thermocycler module", "thermocycler")
+        self._record_deck_item("Labware", self.thermocycler_labware, "thermocycler",
+                               details="on thermocycler module")
 
         all_tip_racks = self.setup_tip_management(protocol)
+        for idx, rack in enumerate(self.tip_management['on_deck_racks']):
+            slot = self.tip_management['available_slots'][idx]
+            self._record_deck_item("Labware", self.tiprack_labware, slot, details="tip rack")
         pipette = protocol.load_instrument(self.pipette, self.pipette_position, tip_racks=all_tip_racks)
+        self._record_deck_item("Instrument", self.pipette, self.pipette_position)
         if self.initial_tip:
             pipette.starting_tip = self.tip_management['on_deck_racks'][0][self.initial_tip]
             protocol.comment(f"Pipette will start from tip {self.initial_tip}")
@@ -428,7 +670,7 @@ class BaseAssembly(ABC):
                                            name="T4 DNA Ligase")
 
         # Load parts and enzymes (format-specific)
-        temp_module_well_counter = self._load_parts_and_enzymes(protocol, alum_block)
+        self._load_parts_and_enzymes(protocol, alum_block)
 
         # Setup temperatures
         thermocycler_module.open_lid()
@@ -444,7 +686,7 @@ class BaseAssembly(ABC):
 
         # Process assemblies (format-specific)
         volume_reagents = self.volume_restriction_enzyme + self.volume_t4_dna_ligase + self.volume_t4_dna_ligase_buffer
-        thermocycler_well_counter = self._process_assembly_combinations(
+        self._process_assembly_combinations(
             protocol, pipette, thermo_plate, alum_block, dd_h2o,
             t4_dna_ligase_buffer, t4_dna_ligase, volume_reagents,
             self.thermocycler_starting_well
@@ -479,10 +721,10 @@ class BaseAssembly(ABC):
             thermocycler_module.set_block_temperature(4)
 
         if protocol.is_simulating():
+            if not self.protocol_name:
+                self.protocol_name = "Loop Assembly"
             if self.output_xlsx:
                 try:
-                    if not self.protocol_name:
-                        self.protocol_name = "Loop Assembly"
                     self.get_xlsx_output(self.protocol_name)
                 except Exception as e:
                     protocol.comment(f"Could not create Excel file: {e}")
@@ -491,6 +733,11 @@ class BaseAssembly(ABC):
                 self._export_transformation_input(protocol)
             except Exception as e:
                 protocol.comment(f"Could not export transformation input: {e}")
+            try:
+                output_path = self.generate_manual_protocol()
+                protocol.comment(f"Generated manual protocol file: {output_path}")
+            except Exception as e:
+                protocol.comment(f"Could not generate manual protocol: {e}")
 
         # Output results
         print('Parts and reagents in temp_module')
@@ -516,7 +763,7 @@ class BaseAssembly(ABC):
         protocol.comment("="*70)
 
     def _load_reagent(self, protocol, module_labware, well_position, name, description=None,
-                      volume=1000, color_index=None):
+                      volume=1000, color_index=None, uri: Optional[str] = None):
         """Load a reagent or DNA part onto the temperature module."""
         well = module_labware.wells()[well_position]
         well_name = well.well_name
@@ -531,6 +778,22 @@ class BaseAssembly(ABC):
         well.load_liquid(liquid, volume=volume)
 
         self.dict_of_parts_in_temp_mod_position[name] = well_name
+        location = self._describe_well_location(well)
+        source_record = SourceMaterialRecord(
+            display_name=name,
+            uri=uri,
+            module_name=location["module_name"],
+            labware_name=location["labware_name"],
+            well=well_name
+        )
+        source_key = (source_record.module_name, source_record.labware_name, source_record.well)
+        self.source_metadata_by_well[source_key] = {
+            "display_name": source_record.display_name,
+            "uri": source_record.uri,
+            "module_name": source_record.module_name,
+            "labware_name": source_record.labware_name,
+            "well": source_record.well
+        }
         protocol.comment(f"Loaded {name} at position {well_name}")
 
         return well
@@ -734,12 +997,14 @@ class Domestication(BaseAssembly):
                     self.liquid_transfer(protocol=protocol, pipette=pipette, volume=mix_volume,
                                          source=dest_well.bottom(), dest=dest_well.bottom(8),
                                          asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False,
-                                         touch_tip=True)
+                                         touch_tip=True, record_event=False)
+                self._record_mix_event(dest_well, mix_volume)
                 pipette.drop_tip()
 
                 # Track assembly
                 assembly_name = f"Part: {part}, Replicate: {r + 1}"
                 self.dict_of_parts_in_thermocycler[assembly_name] = dest_well_name
+                self._record_reaction_destination(assembly_name, dest_well_name)
                 self.dna_list_for_transformation_protocol.append(f"{part}_rep{r + 1}")
 
                 thermocycler_well_counter += 1
@@ -1047,11 +1312,17 @@ class ManualLoopAssembly(BaseAssembly):
                 for _ in range(int(self.volume_total_reaction / 10)):
                     self.liquid_transfer(protocol=protocol, pipette=pipette, volume=mix_volume,
                                          source=dest_well.bottom(), dest=dest_well.bottom(8),
-                                         asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False, touch_tip=True)
+                                         asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False,
+                                         touch_tip=True, record_event=False)
+                self._record_mix_event(dest_well, mix_volume)
                 pipette.drop_tip()
 
                 # Track combination
                 self.dict_of_parts_in_thermocycler[f"Replicate: {r + 1}, Combination: {combination}"] = dest_well_name
+                self._record_reaction_destination(
+                    f"Replicate: {r + 1}, Combination: {combination}",
+                    dest_well_name
+                )
                 combination_name = "_".join(combination)
                 self.dna_list_for_transformation_protocol.append(f"{combination_name}_rep{r + 1}")
                 thermocycler_well_counter += 1
@@ -1098,6 +1369,9 @@ class SBOLLoopAssembly(BaseAssembly):
         self.restriction_enzyme_set = set()
         self.combined_set = set()
         self.assembly_combinations = []  # SBOL assemblies are explicit, not combinatorial
+        self.part_uri_by_name = {}
+        self.backbone_uri_by_name = {}
+        self.enzyme_uri_by_name = {}
 
     def process_assemblies(self):
         """Process SBOL format assemblies - each is explicit, no combinations needed"""
@@ -1109,15 +1383,18 @@ class SBOLLoopAssembly(BaseAssembly):
             for part_uri in assembly["PartsList"]:
                 part_name = self._extract_name_from_uri(part_uri)
                 self.parts_set.add(part_name)
+                self.part_uri_by_name[part_name] = part_uri
                 part_names.append(part_name)
 
             # Extract backbone
             backbone_name = self._extract_name_from_uri(assembly["Backbone"])
             self.backbone_set.add(backbone_name)
+            self.backbone_uri_by_name[backbone_name] = assembly["Backbone"]
 
             # Extract restriction enzyme
             enzyme_name = self._extract_name_from_uri(assembly["Restriction Enzyme"])
             self.restriction_enzyme_set.add(enzyme_name)
+            self.enzyme_uri_by_name[enzyme_name] = assembly["Restriction Enzyme"]
 
             # Extract product name
             product_name = self._extract_name_from_uri(assembly["Product"])
@@ -1140,14 +1417,17 @@ class SBOLLoopAssembly(BaseAssembly):
         for enzyme_name in sorted(self.restriction_enzyme_set):
             self._load_reagent(protocol, module_labware=alum_block,
                                well_position=temp_module_well_counter,
-                               name=f"Restriction Enzyme {enzyme_name}")
+                               name=f"Restriction Enzyme {enzyme_name}",
+                               uri=self.enzyme_uri_by_name.get(enzyme_name))
             temp_module_well_counter += 1
 
         # Load all unique parts (including backbones)
         for part in sorted(self.combined_set):
+            part_uri = self.part_uri_by_name.get(part) or self.backbone_uri_by_name.get(part)
             self._load_reagent(protocol, module_labware=alum_block,
                                well_position=temp_module_well_counter,
-                               name=f"{part}")
+                               name=f"{part}",
+                               uri=part_uri)
             temp_module_well_counter += 1
 
         return temp_module_well_counter
@@ -1210,11 +1490,18 @@ class SBOLLoopAssembly(BaseAssembly):
                 for _ in range(int(self.volume_total_reaction / 10)):
                     self.liquid_transfer(protocol=protocol, pipette=pipette, volume=mix_volume,
                                          source=dest_well.bottom(), dest=dest_well.bottom(8),
-                                         asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False, touch_tip=True)
+                                         asp_rate=1.0, disp_rate=1.0, new_tip=False, drop_tip=False,
+                                         touch_tip=True, record_event=False)
+                self._record_mix_event(dest_well, mix_volume)
                 pipette.drop_tip()
 
                 # Track assembly
                 self.dict_of_parts_in_thermocycler[f"Replicate: {r + 1}, Product: {product_name}"] = dest_well_name
+                self._record_reaction_destination(
+                    f"Replicate: {r + 1}, Product: {product_name}",
+                    dest_well_name,
+                    reaction_uri=assembly_combo['product_uri']
+                )
                 self.dna_list_for_transformation_protocol.append(f"{product_name}_rep{r + 1}")
 
                 # Track URI -> well locations for transformation export
@@ -1247,6 +1534,9 @@ class SBOLLoopAssembly(BaseAssembly):
         self.restriction_enzyme_set = set()
         self.combined_set = set()
         self.assembly_combinations = []
+        self.part_uri_by_name = {}
+        self.backbone_uri_by_name = {}
+        self.enzyme_uri_by_name = {}
 
     def _extract_name_from_uri(self, uri: str) -> str:
         """Extract part name from SBOL URI"""

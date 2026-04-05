@@ -28,6 +28,7 @@ Reference: [Original protocol](https://old.igem.org/wiki/images/a/a4/InterLab_20
 - Install PUDU in the OT2 that will perform the automation
 - Develop protocols in your computer
 - To simulate your protocols you can open the PUDU folder in your terminal and run `opentrons_simulate ./scripts/run_Loop_assembly.py ` for example [[instructions](https://support.opentrons.com/s/article/Simulating-OT-2-protocols-on-your-computer?)]
+- During Loop assembly simulation, PUDU now also generates a Markdown manual protocol (`<protocol_name>_manual_protocol.md`) with deck setup, source/reaction mapping, and step-by-step human pipetting instructions.
 - Transfer the script file (.py) to the computer used to run the protocol on the OT2 (if its the same, omit)
 - Load the script file (.py) on the Opentrons App
 - Follow Oppentrons App instruction
