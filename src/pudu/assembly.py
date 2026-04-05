@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 from fnmatch import fnmatch
 from itertools import product
 import json
+import re
 from abc import ABC, abstractmethod
 from pudu.utils import Camera, colors
 
@@ -97,6 +98,17 @@ class BaseAssembly(ABC):
         self.dna_list_for_transformation_protocol = []
         self.product_uri_to_wells = {}
         self.xlsx_output = None
+        self.manual_protocol_events = []
+        self.source_metadata_by_location = {}
+        self.reaction_destination_metadata = []
+        self.deck_setup_metadata = {
+            'temperature_module': {'slot': self.temperature_module_position, 'labware': self.temperature_module_labware},
+            'thermocycler_module': {'labware': self.thermocycler_labware},
+            'tipracks': {'labware': self.tiprack_labware, 'slots': self.tiprack_positions},
+            'pipette': {'name': self.pipette, 'mount': self.pipette_position}
+        }
+        self._last_known_reaction_destination = None
+        self._last_known_reaction_module = None
 
         #Initialize Camera
         self.camera = Camera()
@@ -363,6 +375,8 @@ class BaseAssembly(ABC):
 
         pipette.aspirate(volume, source, rate=asp_rate)
         pipette.dispense(volume, dest, rate=disp_rate)
+        self._record_transfer_event(volume=volume, source=source, dest=dest,
+                                    mix_before=mix_before, mix_after=mix_after)
 
         if mix_after > 0:
             pipette.mix(mix_reps, mix_after, dest)
@@ -479,6 +493,10 @@ class BaseAssembly(ABC):
             thermocycler_module.set_block_temperature(4)
 
         if protocol.is_simulating():
+            try:
+                self.generate_manual_protocol()
+            except Exception as e:
+                protocol.comment(f"Could not create manual protocol markdown: {e}")
             if self.output_xlsx:
                 try:
                     if not self.protocol_name:
@@ -516,7 +534,7 @@ class BaseAssembly(ABC):
         protocol.comment("="*70)
 
     def _load_reagent(self, protocol, module_labware, well_position, name, description=None,
-                      volume=1000, color_index=None):
+                      volume=1000, color_index=None, uri: Optional[str] = None):
         """Load a reagent or DNA part onto the temperature module."""
         well = module_labware.wells()[well_position]
         well_name = well.well_name
@@ -531,9 +549,188 @@ class BaseAssembly(ABC):
         well.load_liquid(liquid, volume=volume)
 
         self.dict_of_parts_in_temp_mod_position[name] = well_name
+        self._register_source_metadata(
+            display_name=name,
+            source_well=well_name,
+            source_module='temperature module',
+            source_labware=self.temperature_module_labware,
+            uri=uri
+        )
         protocol.comment(f"Loaded {name} at position {well_name}")
 
         return well
+
+    def _location_key(self, module_name: str, well_name: str) -> str:
+        return f"{module_name}|{well_name}"
+
+    def _register_source_metadata(self, display_name: str, source_well: str, source_module: str,
+                                  source_labware: str, uri: Optional[str] = None):
+        key = self._location_key(source_module, source_well)
+        self.source_metadata_by_location[key] = {
+            'display_name': display_name,
+            'uri': uri,
+            'source_module': source_module,
+            'source_labware': source_labware,
+            'source_well': source_well
+        }
+
+    def _record_reaction_destination(self, destination_well: str, reaction_label: str,
+                                     implementation_name: Optional[str] = None,
+                                     implementation_uri: Optional[str] = None):
+        self.reaction_destination_metadata.append({
+            'destination_well': destination_well,
+            'reaction_label': reaction_label,
+            'implementation_name': implementation_name,
+            'implementation_uri': implementation_uri
+        })
+
+    def _resolve_location_metadata(self, location):
+        def _normalize_module_name(raw_name: str) -> str:
+            lowered = raw_name.lower()
+            if 'temperature module' in lowered:
+                return 'temperature module'
+            if 'thermocycler' in lowered:
+                return 'thermocycler module'
+            return raw_name
+
+        if hasattr(location, 'well_name'):
+            well_name = location.well_name
+            parent = getattr(location, 'parent', None)
+            module_name = 'deck'
+            labware_name = 'labware'
+            if parent is not None:
+                labware_name = getattr(parent, 'load_name', getattr(parent, 'name', str(parent)))
+                module_parent = getattr(parent, 'parent', None)
+                if module_parent is not None:
+                    module_name = _normalize_module_name(getattr(module_parent, 'name', str(module_parent)))
+            return {'well_name': well_name, 'module_name': module_name, 'labware_name': labware_name}
+        if hasattr(location, 'labware') and hasattr(location, 'point'):
+            # Opentrons Location object, use owning labware metadata
+            parent = getattr(location, 'labware', None)
+            well_name = getattr(parent, 'well_name', 'unknown')
+            module_name = 'deck'
+            labware_name = 'labware'
+            if parent is not None:
+                labware_name = getattr(parent, 'load_name', getattr(parent, 'name', str(parent)))
+                module_parent = getattr(parent, 'parent', None)
+                if module_parent is not None:
+                    module_name = _normalize_module_name(getattr(module_parent, 'name', str(module_parent)))
+            return {'well_name': well_name, 'module_name': module_name, 'labware_name': labware_name}
+        return {'well_name': str(location), 'module_name': 'unknown', 'labware_name': 'unknown'}
+
+    def _record_transfer_event(self, volume: float, source, dest, mix_before: float = 0.0, mix_after: float = 0.0):
+        source_meta = self._resolve_location_metadata(source)
+        dest_meta = self._resolve_location_metadata(dest)
+        if dest_meta['well_name'] == 'unknown' and self._last_known_reaction_destination:
+            dest_meta['well_name'] = self._last_known_reaction_destination
+        if source_meta['well_name'] == 'unknown' and self._last_known_reaction_destination:
+            source_meta['well_name'] = self._last_known_reaction_destination
+        if dest_meta['module_name'] == 'unknown' and self._last_known_reaction_module:
+            dest_meta['module_name'] = self._last_known_reaction_module
+        if source_meta['module_name'] == 'unknown' and self._last_known_reaction_module:
+            source_meta['module_name'] = self._last_known_reaction_module
+        if dest_meta['well_name'] != 'unknown':
+            self._last_known_reaction_destination = dest_meta['well_name']
+            self._last_known_reaction_module = dest_meta['module_name']
+        source_key = self._location_key(source_meta['module_name'], source_meta['well_name'])
+        source_material_meta = self.source_metadata_by_location.get(source_key, {})
+        if not source_material_meta:
+            for metadata in self.source_metadata_by_location.values():
+                if metadata['source_well'] == source_meta['well_name']:
+                    source_material_meta = metadata
+                    break
+        self.manual_protocol_events.append({
+            'event_type': 'transfer',
+            'volume_ul': volume,
+            'source': source_meta,
+            'destination': dest_meta,
+            'source_material_name': source_material_meta.get('display_name'),
+            'source_material_uri': source_material_meta.get('uri'),
+            'mix_before_ul': mix_before,
+            'mix_after_ul': mix_after
+        })
+
+    def _sanitize_protocol_name(self) -> str:
+        base_name = self.protocol_name or "Loop_Assembly"
+        return re.sub(r'[^A-Za-z0-9._-]+', '_', base_name).strip('_') or "Loop_Assembly"
+
+    def _well_sort_key(self, well_name: str):
+        if not well_name or len(well_name) < 2:
+            return (99, 99)
+        row = ord(well_name[0].upper()) - ord('A')
+        try:
+            col = int(well_name[1:])
+        except ValueError:
+            col = 999
+        return (col, row)
+
+    def _render_manual_protocol_markdown(self) -> str:
+        lines = []
+        protocol_title = self.protocol_name or "Loop Assembly"
+        lines.append(f"# {protocol_title} Manual Protocol")
+        lines.append("")
+        lines.append("## Overview")
+        lines.append("This document is a human-readable version of the simulated OT-2 assembly workflow. "
+                     "It is generated from the same internal transfer logic used by the simulator.")
+        lines.append("")
+        lines.append("## Inputs and assumptions")
+        lines.append("- This protocol is generated during simulation mode and mirrors OT-2 transfer order.")
+        lines.append("- Volumes are expressed in µL.")
+        lines.append("- Follow standard aseptic liquid handling practices.")
+        lines.append("")
+        lines.append("## Deck and reagent setup")
+        lines.append(f"- Temperature module in slot {self.deck_setup_metadata['temperature_module']['slot']} "
+                     f"with `{self.deck_setup_metadata['temperature_module']['labware']}`.")
+        lines.append(f"- Thermocycler module with `{self.deck_setup_metadata['thermocycler_module']['labware']}`.")
+        lines.append(f"- Tip racks `{self.deck_setup_metadata['tipracks']['labware']}` in slots "
+                     f"{', '.join(self.deck_setup_metadata['tipracks']['slots'])}.")
+        lines.append(f"- Pipette `{self.deck_setup_metadata['pipette']['name']}` mounted on "
+                     f"{self.deck_setup_metadata['pipette']['mount']}.")
+        lines.append("")
+        lines.append("## Source materials table")
+        lines.append("| Material | URI | Source module | Source labware | Well |")
+        lines.append("|---|---|---|---|---|")
+        for record in sorted(self.source_metadata_by_location.values(), key=lambda x: self._well_sort_key(x['source_well'])):
+            lines.append(f"| {record['display_name']} | {record['uri'] or '-'} | {record['source_module']} | "
+                         f"{record['source_labware']} | {record['source_well']} |")
+        lines.append("")
+        lines.append("## Reaction destination table")
+        lines.append("| Destination well | Reaction / construct | Implementation name | Implementation URI |")
+        lines.append("|---|---|---|---|")
+        for reaction in self.reaction_destination_metadata:
+            lines.append(f"| {reaction['destination_well']} | {reaction['reaction_label']} | "
+                         f"{reaction.get('implementation_name') or '-'} | {reaction.get('implementation_uri') or '-'} |")
+        lines.append("")
+        lines.append("## Step-by-step instructions")
+        step_count = 1
+        for event in self.manual_protocol_events:
+            source = event['source']
+            destination = event['destination']
+            source_well = source['well_name']
+            dest_well = destination['well_name']
+            source_module = source['module_name']
+            dest_module = destination['module_name']
+            source_name = event.get('source_material_name') or "material"
+            uri = event.get('source_material_uri')
+
+            if source_well == dest_well and source_module == dest_module:
+                lines.append(f"{step_count}. Mix the reaction in {dest_module} well {dest_well} by pipetting up and down.")
+            else:
+                uri_suffix = f" (URI: {uri})" if uri else ""
+                lines.append(f"{step_count}. Add {event['volume_ul']} µL of {source_name}{uri_suffix} from "
+                             f"{source_module} well {source_well} to {dest_module} well {dest_well}.")
+            step_count += 1
+        lines.append("")
+        lines.append("## Notes and warnings")
+        lines.append("- This manual protocol is auto-generated from simulation events and intended for bench execution support.")
+        lines.append("- Existing simulation outputs (console dictionaries, transformation JSON, and optional XLSX) are unchanged.")
+        return "\n".join(lines) + "\n"
+
+    def generate_manual_protocol(self):
+        markdown = self._render_manual_protocol_markdown()
+        output_name = f"{self._sanitize_protocol_name()}_manual_protocol.md"
+        with open(output_name, 'w') as manual_protocol_file:
+            manual_protocol_file.write(markdown)
 
     def _increment_tip_counter(self):
         """Increment tip usage counter"""
@@ -741,6 +938,7 @@ class Domestication(BaseAssembly):
                 assembly_name = f"Part: {part}, Replicate: {r + 1}"
                 self.dict_of_parts_in_thermocycler[assembly_name] = dest_well_name
                 self.dna_list_for_transformation_protocol.append(f"{part}_rep{r + 1}")
+                self._record_reaction_destination(destination_well=dest_well_name, reaction_label=assembly_name)
 
                 thermocycler_well_counter += 1
 
@@ -1051,9 +1249,11 @@ class ManualLoopAssembly(BaseAssembly):
                 pipette.drop_tip()
 
                 # Track combination
-                self.dict_of_parts_in_thermocycler[f"Replicate: {r + 1}, Combination: {combination}"] = dest_well_name
+                reaction_label = f"Replicate: {r + 1}, Combination: {combination}"
+                self.dict_of_parts_in_thermocycler[reaction_label] = dest_well_name
                 combination_name = "_".join(combination)
                 self.dna_list_for_transformation_protocol.append(f"{combination_name}_rep{r + 1}")
+                self._record_reaction_destination(destination_well=dest_well_name, reaction_label=reaction_label)
                 thermocycler_well_counter += 1
 
         return thermocycler_well_counter
@@ -1098,6 +1298,8 @@ class SBOLLoopAssembly(BaseAssembly):
         self.restriction_enzyme_set = set()
         self.combined_set = set()
         self.assembly_combinations = []  # SBOL assemblies are explicit, not combinatorial
+        self.component_uri_by_name = {}
+        self.enzyme_uri_by_name = {}
 
     def process_assemblies(self):
         """Process SBOL format assemblies - each is explicit, no combinations needed"""
@@ -1110,14 +1312,17 @@ class SBOLLoopAssembly(BaseAssembly):
                 part_name = self._extract_name_from_uri(part_uri)
                 self.parts_set.add(part_name)
                 part_names.append(part_name)
+                self.component_uri_by_name[part_name] = part_uri
 
             # Extract backbone
             backbone_name = self._extract_name_from_uri(assembly["Backbone"])
             self.backbone_set.add(backbone_name)
+            self.component_uri_by_name[backbone_name] = assembly["Backbone"]
 
             # Extract restriction enzyme
             enzyme_name = self._extract_name_from_uri(assembly["Restriction Enzyme"])
             self.restriction_enzyme_set.add(enzyme_name)
+            self.enzyme_uri_by_name[enzyme_name] = assembly["Restriction Enzyme"]
 
             # Extract product name
             product_name = self._extract_name_from_uri(assembly["Product"])
@@ -1140,14 +1345,16 @@ class SBOLLoopAssembly(BaseAssembly):
         for enzyme_name in sorted(self.restriction_enzyme_set):
             self._load_reagent(protocol, module_labware=alum_block,
                                well_position=temp_module_well_counter,
-                               name=f"Restriction Enzyme {enzyme_name}")
+                               name=f"Restriction Enzyme {enzyme_name}",
+                               uri=self.enzyme_uri_by_name.get(enzyme_name))
             temp_module_well_counter += 1
 
         # Load all unique parts (including backbones)
         for part in sorted(self.combined_set):
             self._load_reagent(protocol, module_labware=alum_block,
                                well_position=temp_module_well_counter,
-                               name=f"{part}")
+                               name=f"{part}",
+                               uri=self.component_uri_by_name.get(part))
             temp_module_well_counter += 1
 
         return temp_module_well_counter
@@ -1214,8 +1421,15 @@ class SBOLLoopAssembly(BaseAssembly):
                 pipette.drop_tip()
 
                 # Track assembly
-                self.dict_of_parts_in_thermocycler[f"Replicate: {r + 1}, Product: {product_name}"] = dest_well_name
+                reaction_label = f"Replicate: {r + 1}, Product: {product_name}"
+                self.dict_of_parts_in_thermocycler[reaction_label] = dest_well_name
                 self.dna_list_for_transformation_protocol.append(f"{product_name}_rep{r + 1}")
+                self._record_reaction_destination(
+                    destination_well=dest_well_name,
+                    reaction_label=reaction_label,
+                    implementation_name=product_name,
+                    implementation_uri=assembly_combo['product_uri']
+                )
 
                 # Track URI -> well locations for transformation export
                 product_uri = assembly_combo['product_uri']
@@ -1247,6 +1461,8 @@ class SBOLLoopAssembly(BaseAssembly):
         self.restriction_enzyme_set = set()
         self.combined_set = set()
         self.assembly_combinations = []
+        self.component_uri_by_name = {}
+        self.enzyme_uri_by_name = {}
 
     def _extract_name_from_uri(self, uri: str) -> str:
         """Extract part name from SBOL URI"""
