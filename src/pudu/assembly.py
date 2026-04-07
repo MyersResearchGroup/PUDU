@@ -1,11 +1,32 @@
 import xlsxwriter
 from opentrons import protocol_api
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from fnmatch import fnmatch
 from itertools import product
 import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pudu.utils import Camera, colors
+
+
+@dataclass
+class ManualReactionRecord:
+    """Structured representation of a single manual assembly reaction."""
+    product_uri: str
+    product_name: str
+    backbone_uri: str
+    backbone_name: str
+    part_uris: List[str]
+    part_names: List[str]
+    restriction_enzyme_uri: str
+    restriction_enzyme_name: str
+    reagent_additions: List[Dict[str, Any]] = field(default_factory=list)
+    number_of_dna_components: int = 0
+    total_dna_volume: float = 0.0
+    fixed_reagent_volume: float = 0.0
+    water_volume: float = 0.0
+    total_reaction_volume: float = 0.0
+    notes: List[str] = field(default_factory=list)
 
 class BaseAssembly(ABC):
     """
@@ -220,6 +241,16 @@ class BaseAssembly(ABC):
                 f"    2. Decrease 'volume_part' to at most {(self.volume_total_reaction - volume_reagents - 1) / num_parts:.1f}µL\n"
                 f"    3. Decrease reagent volumes"
             )
+
+    def _extract_name_from_uri(self, uri: str) -> str:
+        """Extract a resource name from a URI-like identifier."""
+        if not isinstance(uri, str) or not uri.strip():
+            raise ValueError(f"Invalid URI value: {uri!r}")
+
+        chunks = [chunk for chunk in uri.strip().split('/') if chunk]
+        if len(chunks) >= 2:
+            return chunks[-2]
+        return chunks[-1]
 
     def _well_to_index(self, well_name: str) -> int:
         """
@@ -1248,17 +1279,6 @@ class SBOLLoopAssembly(BaseAssembly):
         self.combined_set = set()
         self.assembly_combinations = []
 
-    def _extract_name_from_uri(self, uri: str) -> str:
-        """Extract part name from SBOL URI"""
-        # Extract the last segment after the last '/'
-        if '/' in uri:
-            name_with_version = uri.split('/')[-2]
-            # Remove version number if present (e.g., "GFP/1" -> "GFP")
-            if '/' in name_with_version:
-                return name_with_version.split('/')[0]
-            return name_with_version
-        return uri
-
     def _validate_assembly_requirements(self):
         """Validate SBOL assembly requirements"""
         if not self.assembly_combinations:
@@ -1290,6 +1310,218 @@ class SBOLLoopAssembly(BaseAssembly):
         for assembly_combo in self.assembly_combinations:
             num_parts = len(assembly_combo['parts'])
             self._validate_reaction_volumes(num_parts)
+
+
+class ManualAssembly(BaseAssembly):
+    """
+    Manual Golden Gate assembly protocol generator.
+    Generates human-readable Markdown instead of Opentrons commands.
+    """
+
+    def __init__(self,
+                 assembly_data: Optional[Dict] = None,
+                 json_params: Optional[str] = None,
+                 assemblies: Optional[List[Dict]] = None,
+                 thermocycling_steps: Optional[List[str]] = None,
+                 *args, **kwargs):
+        if assembly_data is not None:
+            if isinstance(assembly_data, dict) and 'assemblies' in assembly_data:
+                assemblies = assembly_data['assemblies']
+            else:
+                assemblies = assembly_data
+
+        if assemblies is None:
+            raise ValueError("Must provide assemblies either via assembly_data or assemblies parameter")
+        if not isinstance(assemblies, list):
+            raise ValueError("assemblies must be a list of reaction dictionaries")
+
+        super().__init__(json_params=json_params, *args, **kwargs)
+        self.assemblies = assemblies
+        self.reaction_records: List[ManualReactionRecord] = []
+        self.required_keys = {'Product', 'Backbone', 'PartsList', 'Restriction Enzyme'}
+        self.thermocycling_steps = thermocycling_steps or [
+            "Cycle 25–30 times between 37°C (digestion) and 16°C (ligation), typically 1–5 minutes at each temperature.",
+            "Incubate at 50°C for 5 minutes to favor completion of assembled products.",
+            "Heat inactivate at 80°C for 10 minutes, then hold at 4°C or place on ice."
+        ]
+
+    def process_assemblies(self):
+        self.reaction_records = self._build_reaction_records()
+        return self.reaction_records
+
+    def _load_parts_and_enzymes(self, protocol, alum_block) -> int:
+        raise NotImplementedError("ManualAssembly does not load Opentrons labware.")
+
+    def _process_assembly_combinations(self, protocol, pipette, thermo_plate, alum_block,
+                                       dd_h2o, t4_dna_ligase_buffer, t4_dna_ligase,
+                                       volume_reagents, thermocycler_well_counter) -> int:
+        raise NotImplementedError("ManualAssembly does not generate Opentrons commands.")
+
+    def _calculate_total_tips_needed(self) -> int:
+        return 0
+
+    def _build_reaction_records(self) -> List[ManualReactionRecord]:
+        if not self.assemblies:
+            raise ValueError("No assemblies provided")
+
+        reaction_records = []
+        for index, assembly in enumerate(self.assemblies, start=1):
+            self._validate_assembly_entry(assembly, index)
+            part_uris = assembly["PartsList"]
+
+            record = ManualReactionRecord(
+                product_uri=assembly["Product"],
+                product_name=self._extract_name_from_uri(assembly["Product"]),
+                backbone_uri=assembly["Backbone"],
+                backbone_name=self._extract_name_from_uri(assembly["Backbone"]),
+                part_uris=part_uris,
+                part_names=[self._extract_name_from_uri(part_uri) for part_uri in part_uris],
+                restriction_enzyme_uri=assembly["Restriction Enzyme"],
+                restriction_enzyme_name=self._extract_name_from_uri(assembly["Restriction Enzyme"]),
+            )
+
+            self._calculate_reaction_volumes(record)
+            record.reagent_additions = self._build_reagent_additions(record)
+            reaction_records.append(record)
+
+        return reaction_records
+
+    def _validate_assembly_entry(self, assembly: Dict[str, Any], index: int):
+        if not isinstance(assembly, dict):
+            raise ValueError(f"Assembly #{index} must be a dictionary")
+
+        missing = self.required_keys - set(assembly.keys())
+        if missing:
+            raise ValueError(
+                f"Assembly #{index} is missing required keys: {sorted(missing)}. "
+                f"Expected keys: {sorted(self.required_keys)}"
+            )
+
+        if not isinstance(assembly["PartsList"], list) or not assembly["PartsList"]:
+            raise ValueError(f"Assembly #{index} must include a non-empty PartsList")
+
+    def _calculate_reaction_volumes(self, record: ManualReactionRecord):
+        record.number_of_dna_components = 1 + len(record.part_names)  # backbone + parts
+        self._validate_reaction_volumes(record.number_of_dna_components)
+
+        record.total_dna_volume = record.number_of_dna_components * self.volume_part
+        record.fixed_reagent_volume = (
+            self.volume_restriction_enzyme +
+            self.volume_t4_dna_ligase +
+            self.volume_t4_dna_ligase_buffer
+        )
+        record.total_reaction_volume = self.volume_total_reaction
+        record.water_volume = (
+            record.total_reaction_volume - record.fixed_reagent_volume - record.total_dna_volume
+        )
+
+        if record.water_volume < 0:
+            raise ValueError(
+                f"Reaction '{record.product_name}' cannot fit in {self.volume_total_reaction}µL. "
+                f"Calculated water volume is {record.water_volume}µL."
+            )
+
+    def _build_reagent_additions(self, record: ManualReactionRecord) -> List[Dict[str, Any]]:
+        additions = [
+            {"name": "nuclease-free water", "volume": record.water_volume},
+            {"name": "10X T4 DNA Ligase Buffer", "volume": self.volume_t4_dna_ligase_buffer},
+            {"name": "T4 DNA Ligase", "volume": self.volume_t4_dna_ligase},
+            {"name": record.restriction_enzyme_name, "volume": self.volume_restriction_enzyme,
+             "uri": record.restriction_enzyme_uri},
+            {"name": f"backbone `{record.backbone_name}`", "volume": self.volume_part, "uri": record.backbone_uri}
+        ]
+
+        for part_name, part_uri in zip(record.part_names, record.part_uris):
+            additions.append({"name": f"part `{part_name}`", "volume": self.volume_part, "uri": part_uri})
+
+        return additions
+
+    def render_markdown(self) -> str:
+        if not self.reaction_records:
+            self.process_assemblies()
+
+        lines = [
+            "# Golden Gate Manual Assembly Protocol",
+            "",
+            "## Overview",
+            "This document provides human-readable Golden Gate assembly instructions for constructs defined in SBOL-like JSON input.",
+            "Each construct is treated as a separate reaction tube with explicit reagent additions and calculated water volumes.",
+            "",
+            "## Inputs",
+        ]
+
+        for record in self.reaction_records:
+            lines.append(f"- **{record.product_name}** from `{record.product_uri}`")
+
+        lines.extend([
+            "",
+            "## Default reagent assumptions",
+            f"- Total reaction volume: **{self.volume_total_reaction} µL**",
+            f"- Per DNA component volume (backbone and each part): **{self.volume_part} µL**",
+            f"- Restriction enzyme volume: **{self.volume_restriction_enzyme} µL**",
+            f"- T4 DNA ligase volume: **{self.volume_t4_dna_ligase} µL**",
+            f"- T4 DNA ligase buffer volume: **{self.volume_t4_dna_ligase_buffer} µL**",
+            "",
+            "Calculated water volume per reaction:",
+        ])
+        for record in self.reaction_records:
+            lines.append(f"- **{record.product_name}**: {record.water_volume} µL")
+
+        lines.extend([
+            "",
+            "## Reaction summary",
+            "| Product | Backbone | Parts | Restriction Enzyme | Number of DNA components | Water volume (µL) | Total volume (µL) |",
+            "|---|---|---|---|---:|---:|---:|",
+        ])
+        for record in self.reaction_records:
+            part_text = ", ".join(record.part_names)
+            lines.append(
+                f"| {record.product_name} | {record.backbone_name} | {part_text} | "
+                f"{record.restriction_enzyme_name} | {record.number_of_dna_components} | "
+                f"{record.water_volume} | {record.total_reaction_volume} |"
+            )
+
+        lines.extend(["", "## Per-reaction instructions", ""])
+        for record in self.reaction_records:
+            lines.extend([
+                f"### Product: {record.product_name}",
+                f"URI: {record.product_uri}",
+                "",
+                f"1. Label one tube as `{record.product_name}`.",
+            ])
+
+            step_index = 2
+            for addition in record.reagent_additions:
+                line = f"{step_index}. Add {addition['volume']} µL {addition['name']}"
+                if 'uri' in addition:
+                    line += f" (URI: {addition['uri']})"
+                line += "."
+                lines.append(line)
+                step_index += 1
+
+            lines.extend([
+                f"{step_index}. Mix gently by pipetting. Do not vortex unless explicitly intended.",
+                f"{step_index + 1}. Briefly spin down if appropriate.",
+                ""
+            ])
+
+        lines.extend(["## Thermocycling"])
+        for i, step in enumerate(self.thermocycling_steps, start=1):
+            lines.append(f"{i}. {step}")
+
+        lines.extend([
+            "",
+            "## Notes",
+            "- If constructs are designed correctly, the final assembled product should no longer contain the Type IIS recognition sites used for assembly.",
+            "- This generated document is an instruction sheet for manual execution and is not an automated OT-2 script.",
+            "- Volumes for ligase, ligase buffer, enzyme, and DNA parts are taken from PUDU assembly defaults unless explicitly overridden.",
+        ])
+
+        return "\n".join(lines)
+
+    def write_markdown(self, output_path: str):
+        with open(output_path, "w", encoding="utf-8") as handle:
+            handle.write(self.render_markdown())
 
 
 class LoopAssembly:

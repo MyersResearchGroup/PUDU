@@ -64,6 +64,34 @@ then in the OT-2 terminal run:
 
  Please visit our documentation with API reference at Read the Docs (TODO)
 
+## Manual Golden Gate protocol generation (Markdown)
+
+PUDU now includes a `ManualAssembly` class for Golden Gate workflows where you want an instruction sheet instead of an OT-2 script.
+
+```python
+from pudu.assembly import ManualAssembly
+
+assemblies = [
+    {
+        "Product": "https://SBOL2Build.org/composite_1/1",
+        "Backbone": "https://sbolcanvas.org/pSB1C3/1",
+        "PartsList": [
+            "https://sbolcanvas.org/J23101/1",
+            "https://sbolcanvas.org/B0034/1",
+            "https://sbolcanvas.org/GFP/1",
+            "https://sbolcanvas.org/B0015/1"
+        ],
+        "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1"
+    }
+]
+
+manual_protocol = ManualAssembly(assemblies=assemblies, output_xlsx=False)
+markdown_text = manual_protocol.render_markdown()
+manual_protocol.write_markdown("manual_protocol.md")
+```
+
+You can run the end-to-end example in `examples/generate_manual_assembly_protocol.py`, which reads `examples/manual_assembly_input.json` and writes `documentation/manual_assembly_example.md`.
+
 ## Tutorials
 
 TODO
