@@ -132,13 +132,22 @@ class RobotProfile:
     def has_module(self, kind: Union[ModuleKind, str]) -> bool:
         return self.module(kind) is not None
 
-    def resolve_labware(self, labware: Labware) -> str:
-        """The robot definition for *labware*, looked up by its name first, then its format."""
-        for key in (labware.name, labware.format.name):
+    def resolve_labware(self, labware: Labware, module_kind: Union[ModuleKind, str, None] = None) -> str:
+        """
+        The robot definition for *labware*.
+
+        Looks up, in order: the labware's name, ``'<format>@<module kind>'`` when it sits on
+        a module (e.g. ``'tube_rack_24@temperature'`` for an aluminum block), then the format.
+        """
+        keys = [labware.name]
+        if module_kind is not None:
+            keys.append(f"{labware.format.name}@{ModuleKind(module_kind).value}")
+        keys.append(labware.format.name)
+        for key in keys:
             if key in self.labware:
                 return self.labware[key]
-        raise KeyError(f"Profile '{self.name}' has no labware definition for '{labware.name}' "
-                       f"or format '{labware.format.name}'. Add one to the profile's 'labware' map.")
+        raise KeyError(f"Profile '{self.name}' has no labware definition for any of {keys}. "
+                       f"Add one to the profile's 'labware' map.")
 
     def pipettes_for(self, volume: float) -> List[PipetteSpec]:
         """Heads able to transfer *volume*, preferring the fewest aspirations, then the smallest head."""

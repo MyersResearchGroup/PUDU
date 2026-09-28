@@ -17,7 +17,10 @@
     "tube_rack_15": "opentrons_15_tuberack_falcon_15ml_conical",
     "tube_rack_6": "opentrons_6_tuberack_falcon_50ml_conical",
     "reservoir_12": "nest_12_reservoir_15ml",
-    "reservoir_1": "nest_1_reservoir_195ml"
+    "reservoir_1": "nest_1_reservoir_195ml",
+    "tube_rack_24@temperature": "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
+    "plate_96@temperature": "opentrons_96_aluminumblock_nest_wellplate_100ul",
+    "plate_96@thermocycler": "nest_96_wellplate_100ul_pcr_full_skirt"
   },
   "deck_slots": ["2", "3", "4", "5", "6", "9"],
   "has_gripper": false,

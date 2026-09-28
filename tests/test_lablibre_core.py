@@ -213,3 +213,13 @@ def test_bundle_writes_files_and_rejects_escaping_paths(tmp_path):
     for bad in ["../escape.py", "/abs.py"]:
         with pytest.raises(ValueError):
             bundle.add(bad, "", FileRole.DATA)
+
+
+def test_profile_resolves_labware_on_modules_before_plain_format():
+    profile = load_profile("ot2_default")
+    plan = Plan("p")
+    plan.add_module("cold", ModuleKind.TEMPERATURE)
+    block = plan.add_labware("reagents", "tube_rack_24", module="cold")
+    rack = plan.add_labware("rack", "tube_rack_24")
+    assert profile.resolve_labware(block, ModuleKind.TEMPERATURE) == "opentrons_24_aluminumblock_nest_1.5ml_snapcap"
+    assert profile.resolve_labware(rack) == "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap"
