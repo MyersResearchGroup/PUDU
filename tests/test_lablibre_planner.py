@@ -55,7 +55,9 @@ def test_large_volumes_are_split_and_mixes_placed_on_first_and_last_pass():
     step = TransferSet(transfers([(plate["A1"], plate["B1"], 90)], mix_before=Mix(50), mix_after=Mix(10)))
     passes = _plan_step(_profile(P20), plan, step).passes()
     assert [p.transfers[0].volume for p in passes] == [18] * 5
-    assert passes[0].transfers[0].mix_before == Mix(20)  # clamped to the head
+    assert passes[0].transfers[0].mix_before == Mix(20)  # reduced to fit the head
+    [warning] = _plan_step(_profile(P20), plan, step).warnings
+    assert (warning.well, warning.when, warning.requested, warning.used) == (plate["A1"], "before", 50, 20)
     assert all(p.transfers[0].mix_before is None for p in passes[1:])
     assert passes[-1].transfers[0].mix_after == Mix(10)
     assert all(p.transfers[0].mix_after is None for p in passes[:-1])

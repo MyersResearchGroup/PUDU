@@ -7,7 +7,7 @@ from opentrons.simulate import simulate
 from lablibre import (OFF_DECK, FileRole, Liquid, LiquidClass, Mix, MoveLabware, Pause, PipetteSpec, Plan,
                       RobotProfile, SetLid, SetTemperature, ThermalProfile, ThermalStep, TipPolicy, Transfer, TransferSet,
                       compile_plan, load_profile, transfers)
-from lablibre.emitters import EmitError, OT2Emitter
+from lablibre.emitters import EmitError, LabLibreWarning, OT2Emitter
 
 
 def _plating_plan():
@@ -210,3 +210,35 @@ def test_multi_dispense_eight_channel_simulates():
     aspirations = [line for line in log if line.startswith("Aspirating")]
     assert len(aspirations) == 3 and all("260.0 uL" in line for line in aspirations[:2])
     assert sum(line.startswith("Dispensing 50.0 uL") for line in log) == 12
+
+
+def test_reduced_mixes_are_flagged_in_code_setup_sheet_and_terminal():
+    plan = Plan("Big mix")
+    plate = plan.add_labware("plate", "plate_96", max_volume_ul=200)
+    plan.load(plate["A1"], Liquid("water"), 150)
+    plan.load(plate["B1"], Liquid("buffer"), 90)
+    plan.add(TransferSet(transfers([(plate["A1"], plate["B1"], 10)], mix_after=Mix(50)), label="Mix hard"))
+    with pytest.warns(LabLibreWarning, match="reduced from 50 µL to 20 µL") as caught:
+        bundle = compile_plan(plan, _profile(modules=[]))
+    assert len(caught) == 1
+    code = _protocol(bundle).content
+    assert "    # Warning: Mix after at plate:B1 reduced from 50 µL to 20 µL: p20_single_gen2 holds at most 20 µL" in code
+    setup = bundle.by_role(FileRole.SETUP)[0].content
+    assert "## Warnings" in setup and "- Step 1: Mix after at plate:B1 reduced from 50 µL to 20 µL" in setup
+    _simulate(bundle)
+
+
+def test_plan_validation_warnings_reach_the_bundle():
+    plan = Plan("Small well")
+    plate = plan.add_labware("plate", "plate_96")
+    plan.load(plate["A1"], Liquid("water"), 5)
+    plan.add(TransferSet(transfers([(plate["A1"], plate["B1"], 2)], mix_before=Mix(10))))
+    with pytest.warns(LabLibreWarning, match="mix_before of 10 µL at plate:A1 exceeds its 5 µL"):
+        bundle = compile_plan(plan, load_profile("ot2_default"))
+    assert bundle.warnings == ["Step 1: mix_before of 10 µL at plate:A1 exceeds its 5 µL"]
+
+
+def test_clean_plans_have_no_warnings(recwarn):
+    bundle = compile_plan(_plating_plan(), load_profile("ot2_default"))
+    assert bundle.warnings == [] and not [w for w in recwarn if issubclass(w.category, LabLibreWarning)]
+    assert "## Warnings" not in bundle.by_role(FileRole.SETUP)[0].content

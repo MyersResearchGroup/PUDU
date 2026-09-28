@@ -38,7 +38,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, Hashable, List, Optional, Sequence, Tuple
 
 from lablibre.labware import LabwareFormat, WellRef
-from lablibre.ops import DistributePass, DropTips, HeadLayout, Op, PickUpTips, TransferPass, TransferPlan
+from lablibre.ops import DistributePass, DropTips, HeadLayout, MixReduced, Op, PickUpTips, TransferPass, TransferPlan
 from lablibre.plan import Plan
 from lablibre.profile import Pitch, PipetteSpec, RobotProfile
 from lablibre.steps import Mix, Ordering, TipPolicy, Transfer, TransferSet
@@ -102,13 +102,14 @@ class ChannelPlanner:
     def plan_transfer_set(self, step: TransferSet) -> TransferPlan:
         """Plan one transfer set."""
         items = list(enumerate(step.transfers))
+        self._warnings: List[MixReduced] = []
         if step.multi_dispense:
             units = self._plan_multi_dispense(step, items)
         else:
             groups = self._group_any(items) if step.ordering is Ordering.ANY else self._group_sequential(items)
             groups.sort(key=lambda g: g.first_index)
             units = [self._unit(step, group) for group in groups]
-        return TransferPlan(step, tuple(self._with_tips(step, units)))
+        return TransferPlan(step, tuple(self._with_tips(step, units)), tuple(self._warnings))
 
     # --- grouping ------------------------------------------------------------------------
 
@@ -419,15 +420,24 @@ class ChannelPlanner:
         ops += [DropTips(unit.head) for unit in held.values()]
         return ops
 
+    def _fit_mix(self, mix: Optional[Mix], head: PipetteSpec, well: WellRef, when: str) -> Optional[Mix]:
+        """*mix*, reduced to what *head* holds if needed; each reduction is recorded as a warning."""
+        if mix is None or mix.volume <= head.max_volume:
+            return mix
+        self._warnings.append(MixReduced(well, when, mix.volume, head.max_volume, head.name))
+        return Mix(head.max_volume, mix.repetitions)
+
     def _passes(self, step: TransferSet, group: _Group) -> List[TransferPass]:
         """Split *group* into passes that fit the head; mix before the first pass and after the last."""
         head = group.head
         count = max(_pass_count(t.volume, head) for t in group.transfers)
+        mixes = {id(t): (self._fit_mix(t.mix_before, head, t.source, "before"),
+                         self._fit_mix(t.mix_after, head, t.dest, "after")) for t in group.transfers}
         passes = []
         for number in range(count):
             chunk = tuple(replace(t, volume=t.volume / count,
-                                  mix_before=_clamp_mix(t.mix_before, head) if number == 0 else None,
-                                  mix_after=_clamp_mix(t.mix_after, head) if number == count - 1 else None)
+                                  mix_before=mixes[id(t)][0] if number == 0 else None,
+                                  mix_after=mixes[id(t)][1] if number == count - 1 else None)
                           for t in group.transfers)
             passes.append(TransferPass(head, group.layout, chunk, step.liquid_class, step.touch_tip, step.blow_out))
         return passes
@@ -454,10 +464,6 @@ def _pass_count(volume: float, head: PipetteSpec) -> int:
     return max(1, math.ceil(volume / head.max_volume - 1e-9))
 
 
-def _clamp_mix(mix: Optional[Mix], head: PipetteSpec) -> Optional[Mix]:
-    if mix is None or mix.volume <= head.max_volume:
-        return mix
-    return Mix(head.max_volume, mix.repetitions)
 
 
 def _has_dependency(transfers: List[Transfer]) -> bool:

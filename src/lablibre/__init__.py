@@ -8,13 +8,13 @@ for that hardware, and :func:`compile_plan` writes those operations into
 a :class:`Bundle` of files that run on the robot with nothing extra installed on it.
 """
 from lablibre.bundle import Bundle, BundleFile, FileRole
-from lablibre.emitters import EMITTERS, EmitError, compile_plan
+from lablibre.emitters import EMITTERS, EmitError, LabLibreWarning, compile_plan
 from lablibre.labware import (FORMATS, PLATE_96, PLATE_384, RESERVOIR_1, RESERVOIR_12, TUBE_RACK_6,
                               TUBE_RACK_15, TUBE_RACK_24, Labware, LabwareFormat, WellRef,
                               parse_well, well_name)
 from lablibre.liquids import Liquid, LiquidClass
 from lablibre.modules import Module, ModuleKind
-from lablibre.ops import DropTips, HeadLayout, Op, PickUpTips, TransferPass, TransferPlan
+from lablibre.ops import DistributePass, DropTips, HeadLayout, MixReduced, Op, PickUpTips, TransferPass, TransferPlan
 from lablibre.plan import Issue, LoadLiquid, Plan, PlanError, Severity
 from lablibre.planner import ChannelPlanner, PlanningError
 from lablibre.profile import ModuleSpec, Pitch, PipetteSpec, RobotProfile, builtin_profiles, load_profile

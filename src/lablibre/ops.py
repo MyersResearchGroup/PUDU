@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import ClassVar, Dict, List, Tuple, Union
 
+from lablibre.labware import WellRef
 from lablibre.liquids import LiquidClass
 from lablibre.profile import PipetteSpec
 from lablibre.steps import Transfer, TransferSet
@@ -92,10 +93,25 @@ class DistributePass(Op):
 
 
 @dataclass(frozen=True)
+class MixReduced:
+    """A mix the planner had to make smaller because the chosen pipette can't hold the requested volume."""
+    well: WellRef
+    when: str  # "before" (at the source) or "after" (at the destination)
+    requested: float
+    used: float
+    pipette: str
+
+    def __str__(self) -> str:
+        return (f"Mix {self.when} at {self.well} reduced from {self.requested:g} µL to {self.used:g} µL: "
+                f"{self.pipette} holds at most {self.used:g} µL")
+
+
+@dataclass(frozen=True)
 class TransferPlan:
     """The operations that carry out one :class:`~lablibre.steps.TransferSet` on one robot."""
     step: TransferSet
     ops: Tuple[Op, ...]
+    warnings: Tuple[MixReduced, ...] = ()
 
     def passes(self) -> List[Union[TransferPass, DistributePass]]:
         """Every aspiration cycle, whether it serves one dispense or several."""

@@ -3,13 +3,13 @@ import pytest
 from lablibre import (OFF_DECK, Comment, Delay, FileRole, Liquid, LiquidClass, Mix, MoveLabware, Pause,
                       PipetteSpec, Plan, RobotProfile, SetLid, SetTemperature, ThermalProfile, ThermalStep,
                       TipPolicy, TransferSet, compile_plan, load_profile, transfers)
-from lablibre.emitters import EmitError, ManualEmitter
+from lablibre.emitters import EmitError, LabLibreWarning, ManualEmitter
 from lablibre.emitters.manual import _duration
 from pudu.plans import PlatingProtocol
 
 
 def _document(plan, profile=None):
-    bundle = compile_plan(plan, profile or load_profile("bench_default"))
+    bundle = ManualEmitter().compile(plan, profile or load_profile("bench_default"))
     [protocol] = bundle.by_role(FileRole.PROTOCOL)
     return protocol.content
 
@@ -76,10 +76,23 @@ def test_transfer_details():
     text = _document(_assembly_like_plan())
     assert "Viscous glycerol stock: pipette slowly" in text
     assert "`reactions` A1, B1 | 12 each | aspirate 24 µL once, then dispense into each well |" in text
-    # Only the P2 can pipette 1 µL, so the 8 µL mix is reduced to what the P2 holds.
-    assert "| 1 | new | P2 | `reagents` A2 | `reactions` A1 | 1 | mix 3 × 2 µL after |" in text
-    assert "| 2 | new | P2 | `reagents` A2 | `reactions` B1 | 1 | mix 3 × 2 µL after |" in text
     assert "Use a fresh tip for every transfer." in text
+
+
+def test_reduced_mixes_are_flagged():
+    # Only the P2 can pipette 1 µL, so the 8 µL mix is reduced to what the P2 holds.
+    with pytest.warns(LabLibreWarning, match="reduced from 8 µL to 2 µL") as caught:
+        bundle = compile_plan(_assembly_like_plan(), load_profile("bench_default"))
+    assert len(caught) == 2
+    assert bundle.warnings == [
+        "Step 4: Mix after at reactions:A1 reduced from 8 µL to 2 µL: P2 holds at most 2 µL",
+        "Step 4: Mix after at reactions:B1 reduced from 8 µL to 2 µL: P2 holds at most 2 µL",
+    ]
+    text = bundle.get("assembly_bench_protocol.md").content
+    assert ("| 1 | new | P2 | `reagents` A2 | `reactions` A1 | 1 | "
+            "mix 3 × 2 µL after (reduced from 8 µL: the P2 holds 2 µL) |") in text
+    assert text.index("## Warnings") < text.index("## Procedure")
+    assert "- Step 4: Mix after at reactions:B1 reduced from 8 µL to 2 µL" in text
 
 
 def test_split_volumes_are_one_row():

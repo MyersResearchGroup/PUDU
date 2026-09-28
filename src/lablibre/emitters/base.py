@@ -5,9 +5,10 @@ import keyword
 import re
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import ClassVar, Iterator, List, Set, Tuple
+from typing import ClassVar, Dict, Iterator, List, Set, Tuple
 
 from lablibre.bundle import Bundle
+from lablibre.ops import TransferPlan
 from lablibre.plan import Plan
 from lablibre.profile import RobotProfile
 
@@ -24,6 +25,15 @@ class Emitter(ABC):
     @abstractmethod
     def compile(self, plan: Plan, profile: RobotProfile) -> Bundle:
         """Validate *plan*, plan its transfers for *profile*, and return the files to run it."""
+
+    @staticmethod
+    def _warnings(plan: Plan, plan_warnings, planned: Dict[int, TransferPlan]) -> List[str]:
+        """Plan-validation warnings and planner warnings, each prefixed with its step number when it has one."""
+        messages = [f"Step {w.step_index + 1}: {w.message}" if w.step_index is not None else w.message
+                    for w in plan_warnings]
+        for index, transfer_plan in sorted(planned.items()):
+            messages += [f"Step {index + 1}: {w}" for w in transfer_plan.warnings]
+        return messages
 
     def _check_profile(self, profile: RobotProfile) -> None:
         if profile.robot not in self.robots:

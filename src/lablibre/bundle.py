@@ -37,9 +37,10 @@ class BundleFile:
 
 @dataclass
 class Bundle:
-    """The files produced by compiling one plan for one robot profile."""
+    """The files produced by compiling one plan for one robot profile, plus anything worth checking before a run."""
     target: str
     files: List[BundleFile] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def add(self, path: str, content: Union[str, bytes], role: Union[FileRole, str]) -> BundleFile:
         if self.get(path) is not None:
