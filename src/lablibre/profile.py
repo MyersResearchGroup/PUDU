@@ -39,6 +39,8 @@ class PipetteSpec:
         mount: Where the head is mounted (``'left'``/``'right'`` on Opentrons), if applicable.
         pitch: Channel spacing; irrelevant for single-channel heads.
         per_channel_volume: ``True`` if channels can aspirate different volumes in one pass.
+        partial_pickup: ``True`` if a fixed-pitch multichannel head can pick up a single tip
+            and work like a single-channel pipette.
         tip_rack: Robot-specific tip rack definition this head uses.
     """
     name: str
@@ -48,6 +50,7 @@ class PipetteSpec:
     mount: Optional[str] = None
     pitch: Pitch = Pitch.FIXED
     per_channel_volume: bool = False
+    partial_pickup: bool = False
     tip_rack: Optional[str] = None
 
     def __post_init__(self):
@@ -61,6 +64,11 @@ class PipetteSpec:
     @property
     def is_multichannel(self) -> bool:
         return self.channels > 1
+
+    @property
+    def can_work_single(self) -> bool:
+        """``True`` if the head can transfer to one well at a time."""
+        return self.channels == 1 or self.pitch is Pitch.INDEPENDENT or self.partial_pickup
 
     def can_transfer(self, volume: float) -> bool:
         """``True`` if *volume* is within range, allowing multiple aspirations above ``max_volume``."""
