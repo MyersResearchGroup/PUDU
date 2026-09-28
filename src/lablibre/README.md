@@ -11,6 +11,8 @@ from pudu.plans import PlatingProtocol
 protocol = PlatingProtocol(plating_data={"bacterium_locations": {"A1": "GFP", "B1": "RFP"}}, replicates=2)
 
 protocol.compile(load_profile("ot2_default")).write("plating_ot2/")      # Opentrons protocol + setup sheet
+protocol.compile(load_profile("flex_default")).write("plating_flex/")    # the same, for a Flex
+protocol.compile(load_profile("hamilton_star_default")).write("plating_hamilton/")  # worklists + run sheet
 protocol.compile(load_profile("bench_default")).write("plating_bench/")  # Markdown bench protocol
 ```
 
@@ -68,7 +70,7 @@ There are four layers, and each one only knows what it needs:
 1. **Protocol logic** (`pudu.plans`) knows the biology: which culture goes into which dilution well, what volumes, which tip may be reused. It builds a **plan** and never names a pipette or a deck slot.
 2. **The plan** (`lablibre.Plan`) is a list of steps on logical labware ("dilution_plate_1", a 96-well plate). It can be validated on its own: volumes are tracked through every transfer.
 3. **The channel planner** (`lablibre.ChannelPlanner`) reads a **robot profile** and decides *how* each group of transfers runs on that hardware: which pipette, which transfers go together on a multichannel head, how to split large volumes, when to pick up and drop tips.
-4. **An emitter** writes those decisions out for one robot family: Python for Opentrons, Markdown for a person, CSV worklists for Hamilton. Emitters make no decisions of their own.
+4. **An emitter** writes those decisions out for one robot family: Python for the OT-2 and Flex, Markdown for a person, CSV worklists for Hamilton. Emitters make no decisions of their own.
 
 The key split: *what* to do is in the plan, *how* to do it on given hardware is in the planner, and *how to write it down* is in the emitter. Two robot families with the same kind of pipette head (for example the OT-2 and Flex 8-channel pipettes) share planner logic; only the emitter differs.
 
@@ -82,7 +84,7 @@ The key split: *what* to do is in the plan, *how* to do it on given hardware is 
 from lablibre import load_profile, builtin_profiles
 from pudu.plans import PlatingProtocol, TransformationProtocol
 
-print(builtin_profiles())                     # ['bench_default', 'hamilton_star_default', 'ot2_default']
+print(builtin_profiles())    # ['bench_default', 'flex_default', 'hamilton_star_default', 'ot2_default']
 
 transformation = TransformationProtocol(transformation_data=[
     {"Strain": "https://SBOL2Build.org/strain_GFP/1",
@@ -185,7 +187,7 @@ Rules checked when a step is created:
 
 ## Robot profiles
 
-A profile is a JSON file describing one robot, or the bench. Three ship with LabLibre: `ot2_default` (PUDU's usual OT-2 setup), `bench_default` (P2 to P1000 pipettes, a cold block, a thermocycler) and `hamilton_star_default` (an 8-channel STAR with placeholder names; see [Hamilton emitter](#hamilton-emitter-robot-hamilton)). Copy one to describe your own hardware and load it with `RobotProfile.from_json(path)`.
+A profile is a JSON file describing one robot, or the bench. Four ship with LabLibre: `ot2_default` (PUDU's usual OT-2 setup), `flex_default` (a Flex with 50 µL and 1000 µL single-channel pipettes, gripper, thermocycler GEN2, temperature module), `bench_default` (P2 to P1000 pipettes, a cold block, a thermocycler) and `hamilton_star_default` (an 8-channel STAR with placeholder names; see [Hamilton emitter](#hamilton-emitter-robot-hamilton)). Copy one to describe your own hardware and load it with `RobotProfile.from_json(path)`.
 
 ```json
 {
@@ -218,14 +220,15 @@ A profile is a JSON file describing one robot, or the bench. Three ship with Lab
 
 | Field | Meaning |
 |---|---|
-| `robot` | Which emitter compiles for it: `ot2`, `manual` or `hamilton`. |
+| `robot` | Which emitter compiles for it: `ot2`, `flex`, `manual` or `hamilton`. |
 | `pipettes` | Each head: `channels`, volume range, `mount`, `tip_rack`. Multichannel heads add `pitch` (`fixed` for Opentrons, `independent` for Hamilton), `per_channel_volume`, and `partial_pickup` (can it use a single tip). |
 | `modules` | Installed modules: kind, model name, location. Plan modules the robot lacks become manual pauses. |
 | `labware` | Maps plan labware to robot labware. Lookup order: the labware's **name**, then **`format@module kind`**, then the **format**. The middle form puts an aluminum block, not a plastic rack, on the temperature module. |
 | `deck_slots` | Free slots, filled in order by labware, then tip racks. |
 | `supports_multi_dispense` | `false` turns multi-dispense steps into ordinary transfers, for robots or methods that do one dispense per aspiration. Default `true`. |
 | `liquid_classes` | Per-robot handling for each liquid class. The OT-2 emitter reads `aspiration_rate` and `dispense_rate`; the bench emitter reads `note`; the Hamilton emitter reads `liquid_class` (a VENUS liquid class name). |
-| `options` | Emitter settings. OT-2: `api_level`. Hamilton: `method`, `positions`, `note`. Both: `locations` to pin labware, e.g. `{"agar_plate_1": "9"}`. |
+| `has_gripper` | Flex: move labware between deck positions with the gripper. |
+| `options` | Emitter settings. OT-2 and Flex: `api_level`. Flex: `trash` (default `A3`), `partial_nozzle` (default `H1`). Hamilton: `method`, `positions`, `note`. All robots: `locations` to pin labware, e.g. `{"agar_plate_1": "9"}`. |
 
 The OT-2 aqueous rates match PUDU's current defaults. The glycerol and cells rates are starting guesses to tune on the robot.
 
@@ -282,6 +285,20 @@ Writes a protocol that reads top to bottom:
 - Labware fills free slots automatically. Tip racks are loaded from the planner's tip counts. Missing modules become pauses asking for that step by hand.
 - It also writes a setup sheet (deck map, pipettes, tip counts, liquids to load, warnings, steps).
 - Supports 1- and 8-channel pipettes, the temperature module and the thermocycler.
+
+### Flex emitter (`robot: "flex"`)
+
+The Flex shares the OT-2's Python API, so both are subclasses of `OpentronsEmitter` and produce the same kind of file. The Flex version differs in:
+
+- `requirements = {"robotType": "Flex", ...}` and slots A1–D3;
+- a trash bin the protocol loads itself (`trash = protocol.load_trash_bin("A3")`, set by `options.trash`), used for dropping tips and discarding multi-dispense leftovers;
+- the thermocycler GEN2 on A1 + B1;
+- the gripper: with `has_gripper`, moves between deck positions and modules use it; moves off the deck stay manual;
+- **single-tip pickup** on 8-channel pipettes marked `partial_pickup`: when the planner sends a single well to an 8-channel pipette, the code switches it to one nozzle (`configure_nozzle_layout(style=SINGLE, start="H1", ...)`) and back to all nozzles for the next full column.
+
+With one nozzle active, the rest of the 8-channel pipette hangs over the slot behind the target; tall labware there is a collision. The emitter can't see that; the Opentrons simulator can, so run it on protocols that use partial pickup. The default Flex profile uses two single-channel pipettes, so it never needs partial pickup.
+
+The tests compile both PUDU ports for the OT-2 and the Flex and check in simulation that the pipetting (every tip, aspirate, dispense and air gap, by labware and well) is identical.
 
 ### Bench emitter (`robot: "manual"`)
 
@@ -372,6 +389,7 @@ A separate test makes sure a deliberately wrong run fails the comparison, so the
 | `tests/test_lablibre_ot2_emitter.py` | Generated protocols, all run in the Opentrons simulator |
 | `tests/test_lablibre_manual_emitter.py` | Bench protocols |
 | `tests/test_lablibre_hamilton_emitter.py` | Hamilton worklists and run sheets |
+| `tests/test_lablibre_flex_emitter.py` | Flex protocols in simulation; identical pipetting to the OT-2; partial pickup |
 | `tests/test_pudu_plans_plating.py` | Plating parity with `Plating` (3 scenarios, up to 1,026 events) |
 | `tests/test_pudu_plans_transformation.py` | Transformation parity with `HeatShockTransformation` (4 scenarios), chaining into plating |
 
@@ -436,7 +454,6 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 **Not built yet**
 
 - **The VENUS worklist method** on the Hamilton itself, built once with the other lab to read the columns above. Then the profile's placeholder names get replaced with the instrument's.
-- **Flex emitter.** Mostly slot names, pipette and tip-rack names, and the gripper; small after the OT-2 emitter.
 - **Assembly port.** The last of PUDU's main protocols.
 
 **Known limitations**
@@ -463,5 +480,5 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 | `src/lablibre/planner.py` | `ChannelPlanner` |
 | `src/lablibre/ops.py` | Planner output: tips, passes, warnings |
 | `src/lablibre/bundle.py` | `Bundle`, output files |
-| `src/lablibre/emitters/` | `compile_plan`, the OT-2, bench and Hamilton emitters |
+| `src/lablibre/emitters/` | `compile_plan`, the OT-2 and Flex emitters (`opentrons.py`), the bench and Hamilton emitters |
 | `src/pudu/plans/` | `PlatingProtocol`, `TransformationProtocol` |

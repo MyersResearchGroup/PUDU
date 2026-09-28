@@ -1,11 +1,15 @@
 """
-OT-2 emitter: writes a standalone Opentrons protocol plus a setup sheet.
+Opentrons emitters (OT-2 and Flex): write a standalone protocol plus a setup sheet.
 
 The protocol file imports only ``opentrons``, so it can be uploaded through
 the Opentrons App without installing PUDU or LabLibre on the robot. All
 decisions (deck layout, pipette choice, channel grouping, tips) are made here
 on the laptop; the file itself is a straight-line list of commands that lab
 members can read and edit.
+
+Both robots share the Python API, so :class:`OpentronsEmitter` does the work
+and :class:`OT2Emitter` and :class:`FlexEmitter` only differ in the trash,
+the thermocycler's footprint, partial tip pickup and the gripper.
 """
 from __future__ import annotations
 
@@ -88,6 +92,9 @@ class _LoadedPipette:
 @dataclass
 class _Deck:
     """Where everything goes and what it is called in the generated code."""
+    trash: str = "protocol.fixed_trash"      # expression for the trash in the generated code
+    trash_location: Optional[str] = None     # slot of a trash bin the protocol loads itself
+    gripper: bool = False
     modules: Dict[str, Optional[ModuleSpec]] = field(default_factory=dict)  # plan module -> installed module
     module_vars: Dict[str, str] = field(default_factory=dict)
     labware_locations: Dict[str, str] = field(default_factory=dict)  # labware -> slot, or plan module name
@@ -97,9 +104,9 @@ class _Deck:
     liquid_vars: Dict[Liquid, str] = field(default_factory=dict)
 
 
-class OT2Emitter(Emitter):
+class OpentronsEmitter(Emitter):
     """
-    Compile a plan into an OT-2 protocol bundle.
+    Compile a plan into an Opentrons protocol bundle; subclassed per robot.
 
     The bundle contains ``<name>.py`` (upload to the Opentrons App),
     ``<name>_setup.md`` (deck map, liquids to load, manual steps) and
@@ -110,8 +117,13 @@ class OT2Emitter(Emitter):
     pauses asking the user to do that step by hand.
     """
 
-    robots = ("ot2",)
-    robot_type = "OT-2"
+    robot_type = ""
+    thermocycler_slots = ""                  # the thermocycler's footprint, for the setup sheet
+    supports_partial_pickup = False
+
+    def _trash_location(self, profile: RobotProfile) -> Optional[str]:
+        """Slot for a trash bin the protocol must load, or ``None`` for a built-in trash."""
+        return None
 
     def compile(self, plan: Plan, profile: RobotProfile) -> Bundle:
         self._check_profile(profile)
@@ -136,12 +148,13 @@ class OT2Emitter(Emitter):
         mounts: Dict[str, str] = {}
         for spec in profile.pipettes:
             if spec.pitch is Pitch.INDEPENDENT and spec.is_multichannel:
-                raise EmitError(f"Pipette '{spec.name}' has independent channels, which the OT-2 lacks")
+                raise EmitError(f"Pipette '{spec.name}' has independent channels, which the {self.robot_type} lacks")
             if spec.channels not in (1, 8):
-                raise EmitError(f"The OT-2 emitter supports 1- and 8-channel pipettes, "
+                raise EmitError(f"The {self.robot_type} emitter supports 1- and 8-channel pipettes, "
                                 f"not '{spec.name}' ({spec.channels} channels)")
             if spec.mount not in ("left", "right"):
-                raise EmitError(f"Pipette '{spec.name}' needs mount 'left' or 'right' on the OT-2, got {spec.mount!r}")
+                raise EmitError(f"Pipette '{spec.name}' needs mount 'left' or 'right' on the {self.robot_type}, "
+                                f"got {spec.mount!r}")
             if spec.mount in mounts:
                 raise EmitError(f"Pipettes '{mounts[spec.mount]}' and '{spec.name}' are both on the {spec.mount} mount")
             mounts[spec.mount] = spec.name
@@ -150,21 +163,27 @@ class OT2Emitter(Emitter):
         for index, transfer_plan in planned.items():
             for op in transfer_plan.ops:
                 if isinstance(op, PickUpTips) and op.channels != op.pipette.channels:
-                    raise EmitError(f"Step {index}: partial tip pickup on '{op.pipette.name}' is not supported on the OT-2")
+                    if not self.supports_partial_pickup or op.channels != 1:
+                        raise EmitError(f"Step {index}: picking up {op.channels} of {op.pipette.channels} tips on "
+                                        f"'{op.pipette.name}' is not supported on the {self.robot_type}")
 
     def _handling(self, profile: RobotProfile) -> Dict[str, Dict[str, float]]:
         for liquid_class, settings in profile.liquid_classes.items():
             unknown = set(settings) - HANDLING_KEYS
             if unknown:
-                raise EmitError(f"Profile '{profile.name}' liquid class '{liquid_class}' has settings the OT-2 "
+                raise EmitError(f"Profile '{profile.name}' liquid class '{liquid_class}' has settings the {self.robot_type} "
                                 f"emitter doesn't understand: {sorted(unknown)}. Supported: {sorted(HANDLING_KEYS)}")
         return {name: dict(settings) for name, settings in profile.liquid_classes.items()}
 
     # --- deck layout -----------------------------------------------------------------------
 
     def _layout(self, plan: Plan, profile: RobotProfile, planned: Dict[int, TransferPlan]) -> _Deck:
-        deck = _Deck()
-        namer = Namer(reserved={"protocol", "protocol_api", "run", "metadata", "requirements", "HANDLING", "_move"})
+        deck = _Deck(gripper=profile.has_gripper)
+        namer = Namer(reserved={"protocol", "protocol_api", "run", "metadata", "requirements", "HANDLING", "_move",
+                                "_distribute", "trash", "ALL", "SINGLE"})
+        deck.trash_location = self._trash_location(profile)
+        if deck.trash_location is not None:
+            deck.trash = "trash"
 
         taken: List[ModuleSpec] = []
         for module in plan.modules.values():
@@ -177,7 +196,7 @@ class OT2Emitter(Emitter):
             deck.modules[module.name] = installed
 
         overrides: Dict[str, str] = dict(profile.options.get("locations", {}))
-        free = [slot for slot in profile.deck_slots if slot not in overrides.values()]
+        free = [slot for slot in profile.deck_slots if slot not in overrides.values() and slot != deck.trash_location]
         occupied_modules: Dict[str, str] = {}
 
         def next_slot(what: str) -> str:
@@ -235,6 +254,10 @@ class OT2Emitter(Emitter):
         out.line("Standalone: needs only the Opentrons software already on the robot.")
         out.line('"""')
         out.line("from opentrons import protocol_api")
+        partial = any(isinstance(op, PickUpTips) and op.channels != op.pipette.channels
+                      for transfer_plan in planned.values() for op in transfer_plan.ops)
+        if partial:
+            out.line("from opentrons.protocol_api import ALL, SINGLE")
         out.line()
         out.line(f"metadata = {repr(self._metadata(plan))}")
         out.line(f"requirements = {repr({'robotType': self.robot_type, 'apiLevel': api_level})}")
@@ -251,12 +274,17 @@ class OT2Emitter(Emitter):
         out.line("def run(protocol: protocol_api.ProtocolContext):")
         with out.indented():
             self._render_deck(out, plan, deck)
+            nozzles: Dict[str, str] = {}  # pipette name -> "single" while it is set up for one tip
             for index, step in enumerate(plan.steps):
                 out.line()
-                self._render_step(out, index, step, planned.get(index), deck, handling)
+                self._render_step(out, index, step, planned.get(index), deck, handling, profile, nozzles)
         return out.text()
 
     def _render_deck(self, out: CodeWriter, plan: Plan, deck: _Deck) -> None:
+        if deck.trash_location is not None:
+            out.line("# Trash")
+            out.line(f"trash = protocol.load_trash_bin({deck.trash_location!r})")
+            out.line()
         if deck.module_vars:
             out.line("# Modules")
             for name, var in deck.module_vars.items():
@@ -299,7 +327,8 @@ class OT2Emitter(Emitter):
                          f"liquid={deck.liquid_vars[loaded_liquid.liquid]}, volume={format_number(loaded_liquid.volume)})")
 
     def _render_step(self, out: CodeWriter, index: int, step: Step, transfer_plan: Optional[TransferPlan],
-                     deck: _Deck, handling: Dict[str, Dict[str, float]]) -> None:
+                     deck: _Deck, handling: Dict[str, Dict[str, float]], profile: RobotProfile,
+                     nozzles: Dict[str, str]) -> None:
         title = f"Step {index + 1}: {self._describe(step)}"
         out.line(f"# {title}")
         out.line(f"protocol.comment({title!r})")
@@ -308,8 +337,10 @@ class OT2Emitter(Emitter):
             for warning in transfer_plan.warnings:
                 out.line(f"# Warning: {warning}")
             for op in transfer_plan.ops:
-                pipette = deck.pipettes[op.pipette.name].var
+                loaded = deck.pipettes[op.pipette.name]
+                pipette = loaded.var
                 if isinstance(op, PickUpTips):
+                    self._render_nozzles(out, op, loaded, profile, nozzles)
                     out.line(f"{pipette}.pick_up_tip()")
                 elif isinstance(op, DropTips):
                     out.line(f"{pipette}.drop_tip()")
@@ -337,7 +368,8 @@ class OT2Emitter(Emitter):
             else:
                 raise EmitError(f"Step {index}: cannot move '{step.labware}' onto '{step.destination}', "
                                 f"which is not on the deck of this robot")
-            out.line(f"protocol.move_labware({labware}, {destination}, use_gripper=False)")
+            gripper = deck.gripper and step.destination != OFF_DECK  # the gripper can't take labware off the deck
+            out.line(f"protocol.move_labware({labware}, {destination}, use_gripper={gripper})")
         elif isinstance(step, Delay):
             out.line(f"protocol.delay(seconds={format_number(step.seconds)}, msg={step.message!r})")
         elif isinstance(step, Pause):
@@ -369,13 +401,29 @@ class OT2Emitter(Emitter):
             args.append("blow_out=False")
         return f"_move({', '.join(args)})"
 
+    @staticmethod
+    def _render_nozzles(out: CodeWriter, op: PickUpTips, loaded: _LoadedPipette, profile: RobotProfile,
+                        nozzles: Dict[str, str]) -> None:
+        """Switch a multichannel pipette between one nozzle and all of them when its next pickup needs it."""
+        if not op.pipette.is_multichannel:
+            return
+        racks = ", ".join(loaded.rack_vars)
+        single = op.channels == 1
+        if single and nozzles.get(op.pipette.name) != "single":
+            start = profile.options.get("partial_nozzle", "H1")
+            out.line(f"{loaded.var}.configure_nozzle_layout(style=SINGLE, start={start!r}, tip_racks=[{racks}])")
+            nozzles[op.pipette.name] = "single"
+        elif not single and nozzles.get(op.pipette.name) == "single":
+            out.line(f"{loaded.var}.configure_nozzle_layout(style=ALL, tip_racks=[{racks}])")
+            nozzles[op.pipette.name] = "all"
+
     def _render_distribute(self, op: DistributePass, pipette: str, deck: _Deck,
                            handling: Dict[str, Dict[str, float]]) -> List[str]:
         """The ``_distribute`` call, one dispense per line; 8-channel dispenses address each column by its top well."""
         lines = [f"_distribute({pipette}, {self._well(op.dispenses[0][0].source, deck)}, ["]
         lines += [f"    ({self._location(dispense[0], deck)}, {format_number(dispense[0].volume)}),"
                   for dispense in op.dispenses]
-        args = ["protocol.fixed_trash"]
+        args = [deck.trash]
         if op.disposal_volume:
             args.append(f"disposal={format_number(op.disposal_volume)}")
         if op.mix_before:
@@ -436,13 +484,16 @@ class OT2Emitter(Emitter):
             if spec is not None:
                 on_it = next((l for l, loc in deck.labware_locations.items() if loc == name), None)
                 item = f"{spec.model} (`{name}`)" + (f" holding `{on_it}` ({deck.labware_defs[on_it]})" if on_it else "")
-                rows.append((spec.location if spec.kind is not ModuleKind.THERMOCYCLER else "7, 8, 10, 11", item))
+                rows.append((spec.location if spec.kind is not ModuleKind.THERMOCYCLER else self.thermocycler_slots,
+                             item))
         for name, location in deck.labware_locations.items():
             if location not in deck.module_vars:
                 rows.append((location, f"`{name}` ({deck.labware_defs[name]})"))
         for loaded in deck.pipettes.values():
             for number, slot in enumerate(loaded.rack_slots, 1):
                 rows.append((slot, f"Tip rack {number} for {loaded.spec.name} ({loaded.spec.tip_rack})"))
+        if deck.trash_location is not None:
+            rows.append((deck.trash_location, "Trash bin"))
         rows.sort(key=lambda row: _slot_sort_key(row[0]))
         lines += ["## Deck", "", "| Slot | Item |", "|---|---|"] + [f"| {slot} | {item} |" for slot, item in rows] + [""]
 
@@ -526,6 +577,33 @@ class OT2Emitter(Emitter):
         if isinstance(step, Comment):
             return step.text
         return type(step).__name__
+
+
+class OT2Emitter(OpentronsEmitter):
+    """OT-2: numbered slots, a built-in trash, no gripper, no partial tip pickup."""
+
+    robots = ("ot2",)
+    robot_type = "OT-2"
+    thermocycler_slots = "7, 8, 10, 11"
+
+
+class FlexEmitter(OpentronsEmitter):
+    """
+    Flex: slots A1-D3, a trash bin the protocol loads (``options.trash``, default ``"A3"``),
+    the gripper for moves between deck positions (``has_gripper``), and single-tip pickup on
+    8-channel pipettes with ``partial_pickup`` (``options.partial_nozzle``, default ``"H1"``).
+
+    With one nozzle active, the rest of an 8-channel pipette hangs over the slot behind the
+    target, so run the generated file through the simulator: it reports any collision.
+    """
+
+    robots = ("flex",)
+    robot_type = "Flex"
+    thermocycler_slots = "A1, B1"
+    supports_partial_pickup = True
+
+    def _trash_location(self, profile: RobotProfile) -> Optional[str]:
+        return str(profile.options.get("trash", "A3"))
 
 
 def _count(number: int, singular: str, plural: str = "") -> str:

@@ -1,0 +1,33 @@
+{
+  "robot": "flex",
+  "name": "Flex (two single-channel pipettes)",
+  "pipettes": [
+    {"name": "flex_1channel_50", "channels": 1, "min_volume": 1, "max_volume": 50,
+     "mount": "left", "tip_rack": "opentrons_flex_96_filtertiprack_50ul"},
+    {"name": "flex_1channel_1000", "channels": 1, "min_volume": 5, "max_volume": 200,
+     "mount": "right", "tip_rack": "opentrons_flex_96_filtertiprack_200ul"}
+  ],
+  "modules": [
+    {"kind": "temperature", "model": "temperature module gen2", "location": "D1"},
+    {"kind": "thermocycler", "model": "thermocycler module gen2", "location": "B1"}
+  ],
+  "labware": {
+    "plate_96": "nest_96_wellplate_100ul_pcr_full_skirt",
+    "tube_rack_24": "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap",
+    "tube_rack_15": "opentrons_15_tuberack_falcon_15ml_conical",
+    "tube_rack_6": "opentrons_6_tuberack_falcon_50ml_conical",
+    "reservoir_12": "nest_12_reservoir_15ml",
+    "reservoir_1": "nest_1_reservoir_195ml",
+    "tube_rack_24@temperature": "opentrons_24_aluminumblock_nest_1.5ml_snapcap",
+    "plate_96@temperature": "opentrons_96_aluminumblock_nest_wellplate_100ul",
+    "plate_96@thermocycler": "nest_96_wellplate_100ul_pcr_full_skirt"
+  },
+  "deck_slots": ["C2", "C3", "D2", "D3", "B2", "B3", "A2", "C1"],
+  "has_gripper": true,
+  "liquid_classes": {
+    "aqueous": {"aspiration_rate": 0.5, "dispense_rate": 1.0},
+    "glycerol": {"aspiration_rate": 0.3, "dispense_rate": 0.5},
+    "cells": {"aspiration_rate": 0.5, "dispense_rate": 0.5}
+  },
+  "options": {"api_level": "2.21", "trash": "A3"}
+}

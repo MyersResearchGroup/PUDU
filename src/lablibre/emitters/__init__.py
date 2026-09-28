@@ -6,7 +6,7 @@ from lablibre.bundle import Bundle
 from lablibre.emitters.base import Emitter, EmitError
 from lablibre.emitters.hamilton import HamiltonEmitter
 from lablibre.emitters.manual import ManualEmitter
-from lablibre.emitters.opentrons import OT2Emitter
+from lablibre.emitters.opentrons import FlexEmitter, OpentronsEmitter, OT2Emitter
 from lablibre.plan import Plan
 from lablibre.profile import RobotProfile
 
@@ -14,7 +14,7 @@ class LabLibreWarning(UserWarning):
     """Something in a compiled protocol worth checking before a run, e.g. a mix reduced to fit a pipette."""
 
 
-EMITTERS: Dict[str, Type[Emitter]] = {robot: cls for cls in (OT2Emitter, ManualEmitter, HamiltonEmitter) for robot in cls.robots}
+EMITTERS: Dict[str, Type[Emitter]] = {robot: cls for cls in (OT2Emitter, FlexEmitter, ManualEmitter, HamiltonEmitter) for robot in cls.robots}
 
 
 def compile_plan(plan: Plan, profile: RobotProfile) -> Bundle:
