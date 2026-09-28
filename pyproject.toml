@@ -38,3 +38,6 @@ test = [
 [project.urls]
 "Homepage" = "https://github.com/MyersResearchGroup/PUDU"
 "Bug Tracker" = "https://github.com/MyersResearchGroup/PUDU/issues"
+
+[tool.setuptools.package-data]
+lablibre = ["profiles/*.json"]

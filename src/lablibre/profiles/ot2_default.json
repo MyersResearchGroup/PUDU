@@ -1,0 +1,30 @@
+{
+  "robot": "ot2",
+  "name": "OT-2 (PUDU defaults)",
+  "pipettes": [
+    {"name": "p20_single_gen2", "channels": 1, "min_volume": 1, "max_volume": 20,
+     "mount": "left", "tip_rack": "opentrons_96_filtertiprack_20ul"},
+    {"name": "p300_single_gen2", "channels": 1, "min_volume": 20, "max_volume": 200,
+     "mount": "right", "tip_rack": "opentrons_96_filtertiprack_200ul"}
+  ],
+  "modules": [
+    {"kind": "temperature", "model": "temperature module gen2", "location": "1"},
+    {"kind": "thermocycler", "model": "thermocycler module", "location": "7"}
+  ],
+  "labware": {
+    "plate_96": "nest_96_wellplate_100ul_pcr_full_skirt",
+    "tube_rack_24": "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap",
+    "tube_rack_15": "opentrons_15_tuberack_falcon_15ml_conical",
+    "tube_rack_6": "opentrons_6_tuberack_falcon_50ml_conical",
+    "reservoir_12": "nest_12_reservoir_15ml",
+    "reservoir_1": "nest_1_reservoir_195ml"
+  },
+  "deck_slots": ["2", "3", "4", "5", "6", "9"],
+  "has_gripper": false,
+  "liquid_classes": {
+    "aqueous": {"aspiration_rate": 0.5, "dispense_rate": 1.0},
+    "glycerol": {"aspiration_rate": 0.3, "dispense_rate": 0.5},
+    "cells": {"aspiration_rate": 0.5, "dispense_rate": 0.5}
+  },
+  "options": {"api_level": "2.21"}
+}
