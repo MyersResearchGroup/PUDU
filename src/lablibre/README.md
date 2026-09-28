@@ -2,7 +2,7 @@
 
 LabLibre turns a lab protocol into files that a specific liquid-handling robot, or a person at the bench, can run. You describe the protocol once, without naming any robot. LabLibre then compiles it on your laptop for the hardware you pick, and the output needs nothing installed on the robot.
 
-It ships as part of the `pudupy` package, next to `pudu`. PUDU's protocols sit on top of it: `pudu.plans.PlatingProtocol` and `pudu.plans.TransformationProtocol` build LabLibre plans, and LabLibre compiles them.
+It ships as part of the `pudupy` package, next to `pudu`. PUDU's protocols sit on top of it: `pudu.plans.AssemblyProtocol`, `TransformationProtocol` and `PlatingProtocol` build LabLibre plans, and LabLibre compiles them.
 
 ```python
 from lablibre import load_profile
@@ -106,19 +106,45 @@ bundle.write("transformation_ot2/")
 
 ### Chain protocols without simulating
 
+Each protocol's bundle carries the next one's input, so the whole assembly → transformation → plating chain compiles without the simulator:
+
 ```python
-import json
-plating = PlatingProtocol(plating_data=json.loads(bundle.get("plating_input.json").content))
-plating.compile(load_profile("ot2_default")).write("plating_ot2/")
+from pudu.plans import AssemblyProtocol
+
+assembly = AssemblyProtocol([
+    {"Product": "https://SBOL2Build.org/composite_1/1",
+     "Backbone": "https://sbolcanvas.org/pSB1C3/1",
+     "PartsList": ["https://sbolcanvas.org/J23101/1", "https://sbolcanvas.org/GFP/1"],
+     "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1"},
+])
+transformation = TransformationProtocol(
+    transformation_data=[{"Strain": "https://SBOL2Build.org/strain_GFP/1",
+                          "Chassis": "https://sbolcanvas.org/DH5alpha/1",
+                          "Plasmids": ["https://SBOL2Build.org/composite_1/1"]}],
+    plasmid_locations=assembly.transformation_input())       # DNA straight from the assembly plate
+plating = PlatingProtocol(plating_data=transformation.plating_input())
+
+for name, protocol in [("assembly", assembly), ("transformation", transformation), ("plating", plating)]:
+    protocol.compile(load_profile("ot2_default")).write(f"run/{name}/")
 ```
 
-A transformation can also take DNA straight from an assembly plate: pass `plasmid_locations` (the `transformation_input.json` an assembly run produces).
+The same data is in each bundle as `transformation_input.json` and `plating_input.json`.
+
+### Assembly formats
+
+`AssemblyProtocol` accepts PUDU's three assembly formats and detects which one it has (or pass `assembly_type`):
+
+| Format | Input | Enzyme |
+|---|---|---|
+| `SBOL` | `Product`, `Backbone`, `PartsList`, `Restriction Enzyme` URIs, one construct each | From each construct |
+| `Manual` | Roles (`promoter`, `rbs`, …, `receiver`); lists expand into every combination | BsaI for `Odd*` receivers, SapI for `Even*` |
+| `Domestication` | `parts`, `backbone`, `restriction_enzyme`; each part goes into the backbone | The one given |
 
 ### Parameters
 
-`PlatingProtocol` and `TransformationProtocol` take the same inputs as `pudu.plating.Plating` and `pudu.transformation.HeatShockTransformation`: the data, `json_params`, and keyword parameters, with the same precedence and validation. They reuse those classes for parameter handling, so behavior matches.
+`AssemblyProtocol`, `TransformationProtocol` and `PlatingProtocol` take the same inputs as PUDU's assembly classes, `HeatShockTransformation` and `Plating`: the data, `json_params`, and keyword parameters, with the same precedence and validation. They reuse those classes for parameter handling, so behavior matches.
 
-Hardware parameters (pipette names, tip racks, labware, deck positions, flow rates) are rejected with an error pointing to the robot profile. Those now live in the profile, so the same protocol parameters work on any robot.
+Hardware parameters (pipette names, tip racks, labware, deck positions, flow rates) are rejected with an error pointing to the robot profile. Those now live in the profile, so the same protocol parameters work on any robot. The assembly camera options (`take_picture`, `take_video`) are rejected too: they run ffmpeg on the robot, which a standalone file can't assume.
 
 ### Run the simulator on a generated protocol
 
@@ -392,6 +418,7 @@ A separate test makes sure a deliberately wrong run fails the comparison, so the
 | `tests/test_lablibre_flex_emitter.py` | Flex protocols in simulation; identical pipetting to the OT-2; partial pickup |
 | `tests/test_pudu_plans_plating.py` | Plating parity with `Plating` (3 scenarios, up to 1,026 events) |
 | `tests/test_pudu_plans_transformation.py` | Transformation parity with `HeatShockTransformation` (4 scenarios), chaining into plating |
+| `tests/test_pudu_plans_assembly.py` | Assembly parity with `SBOLLoopAssembly`, `ManualLoopAssembly` and `Domestication` (5 scenarios); the full assembly → transformation → plating chain on the OT-2 and Flex |
 
 Run them with:
 
@@ -413,6 +440,10 @@ The pipetting is the same. These differences are deliberate:
 | Plating culture plate | Bio-Rad 200 µL plate | The profile's plate on the thermocycler (NEST 100 µL) | Transformation produces a NEST plate, so NEST is what arrives. |
 | Transformation DNA | Blow-out, then the "remove air" step | "Remove air" as a mix, then blow-out | Same pipetting; blowing out afterwards leaves the tip empty. |
 | Transformation `block_max_volume` | 30 µL for both programs | The actual well volume (e.g. 24 and 84 µL) | The recovery wells hold about 84 µL, not 30. |
+| Assembly liquid handling | One flow rate for everything | Ligase and restriction enzymes use the glycerol liquid class | Enzymes in 50% glycerol need slower pipetting. Each reaction is therefore three steps in the protocol (water and buffer; ligase and enzyme; DNA parts), in the original's order. |
+| Assembly `block_max_volume` | 30 µL | The reaction volume (20 µL by default) | |
+| Assembly mix above 20 µL | Silently capped at the pipette's volume | Capped and flagged with a warning | E.g. a 30 µL reaction's air-removal mix on a p20. |
+| Assembly camera | `take_picture`, `take_video` | Not supported | Runs ffmpeg on the robot. |
 | Simulation | Temperature steps skipped whenever simulated | Always included; `water_testing=True` removes them | The generated file runs the same in the simulator and on the robot. |
 | Tip racks | One rack per pipette | As many as the tip count needs | The original runs out of tips above about 47 plating constructs. |
 
@@ -454,7 +485,6 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 **Not built yet**
 
 - **The VENUS worklist method** on the Hamilton itself, built once with the other lab to read the columns above. Then the profile's placeholder names get replaced with the instrument's.
-- **Assembly port.** The last of PUDU's main protocols.
 
 **Known limitations**
 
@@ -481,4 +511,4 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 | `src/lablibre/ops.py` | Planner output: tips, passes, warnings |
 | `src/lablibre/bundle.py` | `Bundle`, output files |
 | `src/lablibre/emitters/` | `compile_plan`, the OT-2 and Flex emitters (`opentrons.py`), the bench and Hamilton emitters |
-| `src/pudu/plans/` | `PlatingProtocol`, `TransformationProtocol` |
+| `src/pudu/plans/` | `AssemblyProtocol`, `TransformationProtocol`, `PlatingProtocol` |

@@ -70,7 +70,7 @@ TODO
 
 ## LabLibre: compile protocols for any robot
 
-LabLibre (in `src/lablibre/`) compiles a protocol, written once without naming a robot, into standalone files for a specific robot (OT-2, Flex, Hamilton) or for manual bench work. Generated Opentrons protocols import only `opentrons`, so nothing needs to be installed on the robot. PUDU's plating and transformation protocols are available as LabLibre plans in `pudu.plans`:
+LabLibre (in `src/lablibre/`) compiles a protocol, written once without naming a robot, into standalone files for a specific robot (OT-2, Flex, Hamilton) or for manual bench work. Generated Opentrons protocols import only `opentrons`, so nothing needs to be installed on the robot. PUDU's assembly, transformation and plating protocols are available as LabLibre plans in `pudu.plans`:
 
 ```python
 from lablibre import load_profile
