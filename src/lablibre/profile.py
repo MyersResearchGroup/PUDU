@@ -100,6 +100,8 @@ class RobotProfile:
             robot-specific labware definition.
         deck_slots: Free deck positions for labware and tip racks, in order of preference.
         has_gripper: ``True`` if the robot can move labware itself.
+        supports_multi_dispense: ``False`` if the robot (or its method) can only do one
+            dispense per aspiration; multi-dispense steps then become ordinary transfers.
         liquid_classes: Robot-specific handling per :class:`~lablibre.liquids.LiquidClass`
             value, e.g. ``{"glycerol": {"aspiration_rate": 0.3}}``.
         options: Emitter-specific settings, e.g. ``{"api_level": "2.21"}``.
@@ -111,6 +113,7 @@ class RobotProfile:
     labware: Mapping[str, str] = field(default_factory=dict)
     deck_slots: Tuple[str, ...] = ()
     has_gripper: bool = False
+    supports_multi_dispense: bool = True
     liquid_classes: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     options: Mapping[str, Any] = field(default_factory=dict)
 

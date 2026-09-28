@@ -329,3 +329,26 @@ def test_multi_dispense_prefers_a_head_that_can_do_the_source_mix():
     [single] = result.passes()
     assert single.pipette.name == "p300_single" and single.mix_before == Mix(50)
     assert result.warnings == ()
+
+
+def test_multi_dispense_becomes_transfers_when_the_robot_cannot():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    step = _distribute([(tubes["A1"], w, 18) for w in plate.wells()[:3]], disposal_volume=4)
+    profile = RobotProfile("test", "test", (P20, P300), supports_multi_dispense=False)
+    result = _plan_step(profile, plan, step)
+    assert [type(p) for p in result.passes()] == [TransferPass] * 3
+    assert result.tips_used() == {"p20_single": 1}
+
+
+def test_independent_heads_for_each_tip_size_get_the_transfers_that_suit_them():
+    plan = _plan()
+    reservoir, plate = plan.labware["reservoir"], plan.labware["plate"]
+    small = PipetteSpec("50uL tips", 8, 0.5, 50, pitch="independent", per_channel_volume=True)
+    large = PipetteSpec("300uL tips", 8, 10, 300, pitch="independent", per_channel_volume=True)
+    pairs = [(reservoir["A1"], w, 60 if i % 2 else 5) for i, w in enumerate(plate.wells()[:6])]
+    for ordering in (Ordering.ANY, Ordering.SEQUENTIAL):
+        passes = _plan_step(_profile(small, large), plan, TransferSet(transfers(pairs), ordering=ordering)).passes()
+        assert all({t.volume for t in p.transfers} == ({5} if p.pipette is small else {60}) for p in passes)
+    any_order = _plan_step(_profile(small, large), plan, TransferSet(transfers(pairs))).passes()
+    assert sorted(len(p.transfers) for p in any_order) == [3, 3]

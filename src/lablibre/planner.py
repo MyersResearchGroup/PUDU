@@ -103,7 +103,7 @@ class ChannelPlanner:
         """Plan one transfer set."""
         items = list(enumerate(step.transfers))
         self._warnings: List[MixReduced] = []
-        if step.multi_dispense:
+        if step.multi_dispense and self.profile.supports_multi_dispense:
             units = self._plan_multi_dispense(step, items)
         else:
             groups = self._group_any(items) if step.ordering is Ordering.ANY else self._group_sequential(items)
@@ -119,11 +119,19 @@ class ChannelPlanner:
         for channels in self._fixed_channel_counts:
             found, remaining = self._extract_fixed_groups(remaining, channels)
             groups += found
-        for head in self._independent_heads:
-            eligible = [item for item in remaining if item[1].volume >= head.min_volume]
-            remaining = [item for item in remaining if item[1].volume < head.min_volume]
-            eligible.sort(key=lambda item: (item[1].dest.labware, item[1].dest.column, item[1].dest.row, item[0]))
-            groups += self._pack_independent(eligible, head)
+        if self._independent_heads:
+            # Each transfer goes to its best independent head first (e.g. the right tip size), then each
+            # head's transfers are packed onto its channels.
+            by_head: Dict[str, List[_Indexed]] = defaultdict(list)
+            leftover = []
+            for item in remaining:
+                head = self._best_independent_head(item[1])
+                (by_head[head.name] if head else leftover).append(item)
+            for head in self._independent_heads:
+                eligible = sorted(by_head[head.name],
+                                  key=lambda item: (item[1].dest.labware, item[1].dest.column, item[1].dest.row, item[0]))
+                groups += self._pack_independent(eligible, head)
+            remaining = leftover
         groups += [self._single(item) for item in remaining]
         return groups
 
@@ -137,8 +145,7 @@ class ChannelPlanner:
                 if group:
                     break
             if group is None:
-                first = items[position][1]
-                head = next((h for h in self._independent_heads if first.volume >= h.min_volume), None)
+                head = self._best_independent_head(items[position][1])
                 if head is not None:
                     group = self._pack_independent(items[position:], head, stop_at_first_misfit=True)[0]
             if group is None:
@@ -223,8 +230,11 @@ class ChannelPlanner:
         flush()
         return groups
 
+    def _best_independent_head(self, transfer: Transfer) -> Optional[PipetteSpec]:
+        return self._choose_head([transfer], lambda h: h.pitch is Pitch.INDEPENDENT and h.is_multichannel)
+
     def _fits_independent(self, group: List[Transfer], transfer: Transfer, head: PipetteSpec) -> bool:
-        if len(group) >= head.channels or transfer.volume < head.min_volume:
+        if len(group) >= head.channels or self._best_independent_head(transfer) is not head:
             return False
         sources = {t.source for t in group}
         dests = {t.dest for t in group}

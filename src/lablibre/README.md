@@ -45,7 +45,7 @@ PUDU's protocols are Python classes that call the Opentrons API directly. That c
 | **Manual protocols were written separately.** `ManualPlating` and friends restate the protocol for bench work, so the two versions can drift apart. | Two implementations per protocol. | The bench protocol is one more compile target of the same plan. |
 | **Chaining needed simulation.** Assembly, transformation and plating pass well locations along in JSON files that only appear when you run `opentrons_simulate`. | Simulate each step to get the next step's input. | The chaining files (e.g. `plating_input.json`) come straight out of the compile. |
 
-The planned Hamilton approach: target a fixed VENUS method that reads a CSV worklist written by LabLibre. That keeps VENUS, its calibrations and its liquid classes in charge, which matters on another lab's instrument. The Hamilton emitter isn't built yet; see the [roadmap](#limitations-and-roadmap).
+For Hamilton, LabLibre writes CSV worklists for a fixed VENUS method built once on the instrument. That keeps VENUS, its calibrations and its liquid classes in charge, which matters on another lab's instrument. See [Hamilton emitter](#hamilton-emitter-robot-hamilton).
 
 ---
 
@@ -68,7 +68,7 @@ There are four layers, and each one only knows what it needs:
 1. **Protocol logic** (`pudu.plans`) knows the biology: which culture goes into which dilution well, what volumes, which tip may be reused. It builds a **plan** and never names a pipette or a deck slot.
 2. **The plan** (`lablibre.Plan`) is a list of steps on logical labware ("dilution_plate_1", a 96-well plate). It can be validated on its own: volumes are tracked through every transfer.
 3. **The channel planner** (`lablibre.ChannelPlanner`) reads a **robot profile** and decides *how* each group of transfers runs on that hardware: which pipette, which transfers go together on a multichannel head, how to split large volumes, when to pick up and drop tips.
-4. **An emitter** writes those decisions out for one robot family: Python for Opentrons, Markdown for a person, a worklist for Hamilton (planned). Emitters make no decisions of their own.
+4. **An emitter** writes those decisions out for one robot family: Python for Opentrons, Markdown for a person, CSV worklists for Hamilton. Emitters make no decisions of their own.
 
 The key split: *what* to do is in the plan, *how* to do it on given hardware is in the planner, and *how to write it down* is in the emitter. Two robot families with the same kind of pipette head (for example the OT-2 and Flex 8-channel pipettes) share planner logic; only the emitter differs.
 
@@ -82,7 +82,7 @@ The key split: *what* to do is in the plan, *how* to do it on given hardware is 
 from lablibre import load_profile, builtin_profiles
 from pudu.plans import PlatingProtocol, TransformationProtocol
 
-print(builtin_profiles())                     # ['bench_default', 'ot2_default']
+print(builtin_profiles())                     # ['bench_default', 'hamilton_star_default', 'ot2_default']
 
 transformation = TransformationProtocol(transformation_data=[
     {"Strain": "https://SBOL2Build.org/strain_GFP/1",
@@ -185,7 +185,7 @@ Rules checked when a step is created:
 
 ## Robot profiles
 
-A profile is a JSON file describing one robot, or the bench. Two ship with LabLibre: `ot2_default` (PUDU's usual OT-2 setup) and `bench_default` (P2 to P1000 pipettes, a cold block, a thermocycler). Copy one to describe your own hardware and load it with `RobotProfile.from_json(path)`.
+A profile is a JSON file describing one robot, or the bench. Three ship with LabLibre: `ot2_default` (PUDU's usual OT-2 setup), `bench_default` (P2 to P1000 pipettes, a cold block, a thermocycler) and `hamilton_star_default` (an 8-channel STAR with placeholder names; see [Hamilton emitter](#hamilton-emitter-robot-hamilton)). Copy one to describe your own hardware and load it with `RobotProfile.from_json(path)`.
 
 ```json
 {
@@ -218,13 +218,14 @@ A profile is a JSON file describing one robot, or the bench. Two ship with LabLi
 
 | Field | Meaning |
 |---|---|
-| `robot` | Which emitter compiles for it: `ot2` or `manual` today. |
+| `robot` | Which emitter compiles for it: `ot2`, `manual` or `hamilton`. |
 | `pipettes` | Each head: `channels`, volume range, `mount`, `tip_rack`. Multichannel heads add `pitch` (`fixed` for Opentrons, `independent` for Hamilton), `per_channel_volume`, and `partial_pickup` (can it use a single tip). |
 | `modules` | Installed modules: kind, model name, location. Plan modules the robot lacks become manual pauses. |
 | `labware` | Maps plan labware to robot labware. Lookup order: the labware's **name**, then **`format@module kind`**, then the **format**. The middle form puts an aluminum block, not a plastic rack, on the temperature module. |
 | `deck_slots` | Free slots, filled in order by labware, then tip racks. |
-| `liquid_classes` | Per-robot handling for each liquid class. The OT-2 emitter reads `aspiration_rate` and `dispense_rate`; the bench emitter reads `note`. |
-| `options` | Emitter settings. OT-2: `api_level`, and `locations` to pin labware to slots, e.g. `{"agar_plate_1": "9"}`. |
+| `supports_multi_dispense` | `false` turns multi-dispense steps into ordinary transfers, for robots or methods that do one dispense per aspiration. Default `true`. |
+| `liquid_classes` | Per-robot handling for each liquid class. The OT-2 emitter reads `aspiration_rate` and `dispense_rate`; the bench emitter reads `note`; the Hamilton emitter reads `liquid_class` (a VENUS liquid class name). |
+| `options` | Emitter settings. OT-2: `api_level`. Hamilton: `method`, `positions`, `note`. Both: `locations` to pin labware, e.g. `{"agar_plate_1": "9"}`. |
 
 The OT-2 aqueous rates match PUDU's current defaults. The glycerol and cells rates are starting guesses to tune on the robot.
 
@@ -247,6 +248,7 @@ Rules it follows:
 - **Large volumes are split into equal passes.** 90 µL on a p20 becomes 5 × 18 µL, not 4 × 20 + 10. Mixing before goes on the first pass, mixing after on the last.
 - **Order:** with `ANY`, transfers may be regrouped. With `SEQUENTIAL`, only consecutive transfers are grouped, and never one that draws from a well another transfer in the group fills.
 - **Multi-dispense:** transfers are grouped by geometry, then consecutive groups drawing from the same source are chained into one aspiration each. The pipette is chosen for the whole chain, so LB can be multi-dispensed with a p300 even though each 18 µL dispense is below its 20 µL minimum. Only the aspiration has to meet the minimum. If no pipette can multi-dispense a chain, it becomes ordinary transfers.
+- **Independent-channel heads** (a Hamilton lists one per tip size on the same channels): each transfer first goes to its best tip size, then transfers of the same tip size are packed onto the channels.
 - **Tips** are handled per pipette according to the tip policy. `TransferPlan.tips_used()` counts them.
 
 The planner's output is a list of operations per step: `PickUpTips`, `TransferPass` (one aspirate and dispense, all channels at once), `DistributePass` (one aspiration, several dispenses) and `DropTips`.
@@ -293,6 +295,47 @@ Writes a Markdown protocol for a person: equipment with tip counts, reagents to 
 
 Pipette choice, tip changes, repeat-dispensing and volume splits come from the same planner the robots use. Thermocycler programs become tables. Lid steps are left out; they're part of running the thermocycler.
 
+### Hamilton emitter (`robot: "hamilton"`)
+
+A Hamilton STAR is driven by VENUS on an attached PC. LabLibre doesn't generate VENUS methods. It writes CSV worklists for **one method built once on the instrument** that reads a worklist and runs it row by row. VENUS keeps its deck layout, calibrations and liquid classes, and nothing is installed on the PC.
+
+The bundle contains:
+
+| File | What it is |
+|---|---|
+| `<name>_worklist_1.csv`, `_2.csv`, … | One per stretch of pipetting. Steps the method can't do (thermocycling, temperature, pauses) split the protocol into several worklists. |
+| `<name>_run_sheet.md` | Deck layout (plan labware → deck labware IDs), tips per tip type, liquids to load, warnings, the run order ("run worklist 1; move the plate to the thermocycler and run…; put it back at Plate_1; run worklist 2"), and the worklist column reference. |
+| `<name>_plan.json` | The plan. |
+
+Each worklist row is **one channel's aspirate and dispense**:
+
+| Column | Meaning |
+|---|---|
+| `Step` | Plan step number, as in the run sheet. |
+| `Batch` | Rows with the same batch run at the same time, one per channel. Numbered from 1 in each file. |
+| `Channel` | Channel to use, from 1. |
+| `TipType` | Tip type to pick up (the pipette's `tip_rack` in the profile). |
+| `NewTip` / `DropTip` | 1: pick up a fresh tip before aspirating / drop it after dispensing. |
+| `SourceLabware`, `SourceWell`, `SourcePosition` | Deck labware ID, well name, and the well as a number counted down each column (A1 = 1, B1 = 2, …). |
+| `DestLabware`, `DestWell`, `DestPosition` | The same for the destination. |
+| `Volume_uL` | Volume to aspirate and dispense. |
+| `LiquidClass` | VENUS liquid class, from the profile. |
+| `AspMixCycles`, `AspMixVolume_uL` | Mix in the source before aspirating (0: none). |
+| `DispMixCycles`, `DispMixVolume_uL` | Mix in the destination after dispensing (0: none). |
+| `DispenseBelowTop_mm` | Blank: the liquid class decides. Otherwise dispense this far below the rim (negative: above it). |
+| `TouchTip` | 1: touch the tip to the well wall after dispensing. |
+
+Air gaps and blow-outs come from the liquid class.
+
+How the profile describes the instrument (`profiles/hamilton_star_default.json`):
+
+- **Tip sizes are separate pipettes** on the same 8 independent channels (`50uL tips`, `300uL tips`, `1000uL tips`), so the planner picks the smallest tip that fits. Because they share channels, the emitter drops one tip size before picking up another.
+- **`supports_multi_dispense: false`**, so each row is one aspirate and one dispense.
+- **`options.positions`** lists the deck layout's labware IDs per format; labware is assigned in order. **`options.method`** names the VENUS method.
+- **Modules:** the method controls none. Labware the plan keeps on a module sits on the deck, with a warning, and thermocycler steps become run-sheet instructions.
+
+All names in the default profile (tip types, liquid classes, method, position IDs) are **placeholders**. They must be set to match the method and deck layout on the actual instrument; the run sheet repeats this note.
+
 ---
 
 ## Warnings
@@ -328,6 +371,7 @@ A separate test makes sure a deliberately wrong run fails the comparison, so the
 | `tests/test_lablibre_planner.py` | Every head type, tip policy, splitting, multi-dispense, head choice |
 | `tests/test_lablibre_ot2_emitter.py` | Generated protocols, all run in the Opentrons simulator |
 | `tests/test_lablibre_manual_emitter.py` | Bench protocols |
+| `tests/test_lablibre_hamilton_emitter.py` | Hamilton worklists and run sheets |
 | `tests/test_pudu_plans_plating.py` | Plating parity with `Plating` (3 scenarios, up to 1,026 events) |
 | `tests/test_pudu_plans_transformation.py` | Transformation parity with `HeatShockTransformation` (4 scenarios), chaining into plating |
 
@@ -391,7 +435,7 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 
 **Not built yet**
 
-- **Hamilton emitter.** CSV worklist plus a setup sheet for a fixed VENUS template method. Needs the instrument's model and the other lab's VENUS setup.
+- **The VENUS worklist method** on the Hamilton itself, built once with the other lab to read the columns above. Then the profile's placeholder names get replaced with the instrument's.
 - **Flex emitter.** Mostly slot names, pipette and tip-rack names, and the gripper; small after the OT-2 emitter.
 - **Assembly port.** The last of PUDU's main protocols.
 
@@ -400,6 +444,7 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 - Tip-rack batch swapping: if a run needs more racks than there are free slots, compiling fails with "Out of deck slots" rather than pausing for a swap.
 - Partial-column grouping: leftover wells in an incomplete column use a single-channel pipette, even on a Flex that could pick up a few tips.
 - Hamilton channel reach isn't modeled; the planner assigns channels in row order and leaves reachability to the VENUS method.
+- Hamilton: no multi-dispense, no CO-RE 96 head, and no on-deck module control yet.
 - Multi-dispense packs greedily, so a small final aspiration can rule out a pipette. Balancing the chunks would fix this.
 - Plan validation doesn't count disposal volume drawn from a source, because the number of aspirations depends on the robot.
 - Construct names passed from transformation to plating keep PUDU's format (`strain, Competent_Cell_..., plasmid, Media_1`).
@@ -418,5 +463,5 @@ The planner already handles fixed-pitch, independent-channel and single-channel 
 | `src/lablibre/planner.py` | `ChannelPlanner` |
 | `src/lablibre/ops.py` | Planner output: tips, passes, warnings |
 | `src/lablibre/bundle.py` | `Bundle`, output files |
-| `src/lablibre/emitters/` | `compile_plan`, the OT-2 emitter, the bench emitter |
+| `src/lablibre/emitters/` | `compile_plan`, the OT-2, bench and Hamilton emitters |
 | `src/pudu/plans/` | `PlatingProtocol`, `TransformationProtocol` |

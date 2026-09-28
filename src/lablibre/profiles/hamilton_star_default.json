@@ -1,0 +1,41 @@
+{
+  "robot": "hamilton",
+  "name": "Hamilton STAR (8 channels, worklist method)",
+  "pipettes": [
+    {"name": "50uL tips", "channels": 8, "min_volume": 0.5, "max_volume": 50,
+     "pitch": "independent", "per_channel_volume": true, "tip_rack": "50uL_Filter"},
+    {"name": "300uL tips", "channels": 8, "min_volume": 10, "max_volume": 300,
+     "pitch": "independent", "per_channel_volume": true, "tip_rack": "300uL_Filter"},
+    {"name": "1000uL tips", "channels": 8, "min_volume": 100, "max_volume": 1000,
+     "pitch": "independent", "per_channel_volume": true, "tip_rack": "1000uL_Filter"}
+  ],
+  "modules": [],
+  "labware": {
+    "plate_96": "96-well PCR plate",
+    "plate_384": "384-well plate",
+    "tube_rack_24": "1.5 mL tubes (24-position tube carrier)",
+    "tube_rack_15": "15 mL conical tubes",
+    "tube_rack_6": "50 mL conical tubes",
+    "reservoir_12": "12-channel reservoir",
+    "reservoir_1": "reagent trough"
+  },
+  "supports_multi_dispense": false,
+  "liquid_classes": {
+    "aqueous": {"liquid_class": "LabLibre_Aqueous"},
+    "glycerol": {"liquid_class": "LabLibre_Glycerol"},
+    "cells": {"liquid_class": "LabLibre_Cells"}
+  },
+  "options": {
+    "method": "LabLibre_Worklist",
+    "positions": {
+      "plate_96": ["Plate_1", "Plate_2", "Plate_3", "Plate_4", "Plate_5"],
+      "plate_384": ["Plate384_1"],
+      "tube_rack_24": ["Tubes_1", "Tubes_2", "Tubes_3"],
+      "tube_rack_15": ["Falcon15_1"],
+      "tube_rack_6": ["Falcon50_1"],
+      "reservoir_12": ["Reservoir12_1"],
+      "reservoir_1": ["Trough_1", "Trough_2"]
+    },
+    "note": "Tip types, liquid class names, the method name and position IDs are placeholders: set them to match the VENUS method and deck layout on the instrument."
+  }
+}
