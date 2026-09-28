@@ -68,6 +68,21 @@ then in the OT-2 terminal run:
 
 TODO
 
+## LabLibre: compile protocols for any robot
+
+LabLibre (in `src/lablibre/`) compiles a protocol, written once without naming a robot, into standalone files for a specific robot or for manual bench work. Generated Opentrons protocols import only `opentrons`, so nothing needs to be installed on the robot. PUDU's plating and transformation protocols are available as LabLibre plans in `pudu.plans`:
+
+```python
+from lablibre import load_profile
+from pudu.plans import PlatingProtocol
+
+protocol = PlatingProtocol(plating_data={"bacterium_locations": {"A1": "GFP", "B1": "RFP"}})
+protocol.compile(load_profile("ot2_default")).write("plating_ot2/")      # Opentrons protocol + setup sheet
+protocol.compile(load_profile("bench_default")).write("plating_bench/")  # Markdown bench protocol
+```
+
+See [src/lablibre/README.md](src/lablibre/README.md) for how it works, how the ports are verified against the original protocols, and how to add robots and protocols.
+
 ## Manual Golden Gate protocol generation
 
 PUDU now supports generating a **human-readable manual Golden Gate protocol** from SBOL-style JSON input using `ManualAssembly`.
