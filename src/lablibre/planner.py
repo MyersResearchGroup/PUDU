@@ -245,7 +245,7 @@ class ChannelPlanner:
         if source_lane is not None and dest_lane is not None and source_lane != dest_lane:
             return None
         key = (transfer.source.labware, source_anchor, transfer.dest.labware, dest_anchor,
-               transfer.volume, transfer.mix_before, transfer.mix_after)
+               transfer.volume, transfer.mix_before, transfer.mix_after, transfer.dispense_below_top)
         return key, dest_lane if dest_lane is not None else source_lane
 
     def _footprint(self, ref: WellRef, head_columns: int) -> Optional[Tuple[Hashable, Optional[_Lane]]]:

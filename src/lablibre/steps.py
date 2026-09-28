@@ -29,7 +29,7 @@ class Ordering(str, Enum):
 class TipPolicy(str, Enum):
     NEW_EACH = "new_each"      # fresh tip for every transfer
     PER_SOURCE = "per_source"  # reuse a tip while drawing from the same source (distributing)
-    ONE = "one"                # a single tip for the whole set
+    ONE = "one"                # a single tip for the whole set; any carryover is accepted
 
 
 @dataclass(frozen=True)
@@ -47,16 +47,26 @@ class Mix:
 
 @dataclass(frozen=True)
 class Transfer:
-    """Move *volume* µL from *source* to *dest*, optionally mixing before aspirating or after dispensing."""
+    """
+    Move *volume* µL from *source* to *dest*, optionally mixing before aspirating or after dispensing.
+
+    Args:
+        dispense_below_top: Dispense this many mm below the top of the destination well
+            instead of at the robot's default height, e.g. ``8`` to spot onto agar without
+            touching it. ``None`` uses the default.
+    """
     source: WellRef
     dest: WellRef
     volume: float
     mix_before: Optional[Mix] = None
     mix_after: Optional[Mix] = None
+    dispense_below_top: Optional[float] = None
 
     def __post_init__(self):
         if self.volume <= 0:
             raise ValueError(f"Transfer volume must be positive, got {self.volume} ({self.source} -> {self.dest})")
+        if self.dispense_below_top is not None and self.dispense_below_top < 0:
+            raise ValueError(f"dispense_below_top must be zero or positive, got {self.dispense_below_top}")
 
 
 class Step:
@@ -98,10 +108,11 @@ class TransferSet(Step):
         object.__setattr__(self, "tips", TipPolicy(self.tips))
         if not self.transfers:
             raise ValueError("TransferSet must contain at least one transfer")
-        if self.tips is not TipPolicy.NEW_EACH and any(t.mix_after for t in self.transfers):
-            # Mixing in the destination wets the tip with that well's contents;
-            # reusing it would carry that into the next well or back into the source.
-            raise ValueError(f"TransferSet '{self.label}': mix_after requires tips=TipPolicy.NEW_EACH")
+        if self.tips is TipPolicy.PER_SOURCE and any(t.mix_after for t in self.transfers):
+            # Mixing in the destination wets the tip with that well's contents, and
+            # PER_SOURCE would silently carry it back into the source. TipPolicy.ONE
+            # is allowed: it is an explicit choice to use one tip for the whole set.
+            raise ValueError(f"TransferSet '{self.label}': mix_after cannot be combined with tips=TipPolicy.PER_SOURCE")
 
     def sources(self) -> List[WellRef]:
         """Distinct source wells, in first-use order."""

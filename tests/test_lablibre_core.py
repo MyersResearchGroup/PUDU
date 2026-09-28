@@ -61,11 +61,14 @@ def test_labware_wells_are_column_major_and_validated():
 
 # --- steps ---------------------------------------------------------------------------------
 
-def test_transfer_set_rejects_tip_reuse_with_mix_after():
+def test_transfer_set_rejects_implicit_tip_reuse_with_mix_after():
     plan = Plan("p")
     plate = plan.add_labware("plate", "plate_96")
     with pytest.raises(ValueError, match="mix_after"):
-        TransferSet([Transfer(plate["A1"], plate["B1"], 5, mix_after=Mix(5))], tips=TipPolicy.ONE)
+        TransferSet([Transfer(plate["A1"], plate["B1"], 5, mix_after=Mix(5))], tips=TipPolicy.PER_SOURCE)
+    TransferSet([Transfer(plate["A1"], plate["B1"], 5, mix_after=Mix(5))], tips=TipPolicy.ONE)  # explicit choice
+    with pytest.raises(ValueError, match="dispense_below_top"):
+        Transfer(plate["A1"], plate["B1"], 5, dispense_below_top=-1)
     with pytest.raises(ValueError):
         TransferSet([])
     with pytest.raises(ValueError):

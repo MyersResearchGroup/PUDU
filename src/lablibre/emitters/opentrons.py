@@ -36,12 +36,13 @@ LIQUID_COLORS = ["#4040BF", "#BF4040", "#40BF40", "#A640BF", "#BFBF40", "#BF7340
 # Emitted once into every protocol; the only helper the generated code needs.
 _MOVE_HELPER = '''
 def _move(pipette, source, dest, volume, aspiration_rate=1.0, dispense_rate=1.0,
-          mix_before=None, mix_after=None, touch_tip=False, blow_out=True):
+          mix_before=None, mix_after=None, touch_tip=False, blow_out=True, dispense_below_top=None):
     """Aspirate from source and dispense into dest. Mixes are (volume, repetitions)."""
     if mix_before:
         pipette.mix(mix_before[1], mix_before[0], source)
     pipette.aspirate(volume, source, rate=aspiration_rate)
-    pipette.dispense(volume, dest, rate=dispense_rate)
+    target = dest if dispense_below_top is None else dest.top(-dispense_below_top)
+    pipette.dispense(volume, target, rate=dispense_rate)
     if mix_after:
         pipette.mix(mix_after[1], mix_after[0], dest)
     if blow_out:
@@ -327,6 +328,8 @@ class OT2Emitter(Emitter):
             args.append(f"mix_before=({format_number(transfer.mix_before.volume)}, {transfer.mix_before.repetitions})")
         if transfer.mix_after:
             args.append(f"mix_after=({format_number(transfer.mix_after.volume)}, {transfer.mix_after.repetitions})")
+        if transfer.dispense_below_top is not None:
+            args.append(f"dispense_below_top={format_number(transfer.dispense_below_top)}")
         if op.touch_tip:
             args.append("touch_tip=True")
         if not op.blow_out:
