@@ -22,6 +22,13 @@ With ``Ordering.ANY`` the planner may regroup transfers freely, and assumes the
 transfers in the set don't depend on each other. With ``Ordering.SEQUENTIAL``
 it only groups consecutive transfers, and never groups a transfer with one
 whose destination it draws from.
+
+Sets with ``multi_dispense`` are grouped by geometry first (single channel or
+fixed-pitch columns), then consecutive groups drawing from the same sources
+are chained into :class:`~lablibre.ops.DistributePass` operations. The head is
+chosen for the whole chain, preferring the fewest aspirations, so a large
+pipette may serve dispenses below its own minimum volume. Chains no head can
+multi-dispense fall back to ordinary transfers.
 """
 from __future__ import annotations
 
@@ -31,7 +38,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, Hashable, List, Optional, Sequence, Tuple
 
 from lablibre.labware import LabwareFormat, WellRef
-from lablibre.ops import DropTips, HeadLayout, Op, PickUpTips, TransferPass, TransferPlan
+from lablibre.ops import DistributePass, DropTips, HeadLayout, Op, PickUpTips, TransferPass, TransferPlan
 from lablibre.plan import Plan
 from lablibre.profile import Pitch, PipetteSpec, RobotProfile
 from lablibre.steps import Mix, Ordering, TipPolicy, Transfer, TransferSet
@@ -48,10 +55,23 @@ class PlanningError(ValueError):
 
 @dataclass
 class _Group:
-    head: PipetteSpec
+    head: Optional[PipetteSpec]  # None until chosen, when grouping by geometry only
     layout: HeadLayout
-    transfers: List[Transfer]  # in channel order
-    first_index: int           # position of the earliest member in the transfer set
+    transfers: List[Transfer]    # in channel order
+    first_index: int             # position of the earliest member in the transfer set
+
+    @property
+    def sources(self) -> Tuple[WellRef, ...]:
+        return tuple(t.source for t in self.transfers)
+
+
+@dataclass
+class _Unit:
+    """Work done with one set of tips: a head, how many tips it holds, where they draw from, and its passes."""
+    head: PipetteSpec
+    channels: int
+    sources: Tuple[WellRef, ...]
+    passes: List[Op]
 
 
 class ChannelPlanner:
@@ -82,12 +102,13 @@ class ChannelPlanner:
     def plan_transfer_set(self, step: TransferSet) -> TransferPlan:
         """Plan one transfer set."""
         items = list(enumerate(step.transfers))
-        if step.ordering is Ordering.ANY:
-            groups = self._group_any(items)
+        if step.multi_dispense:
+            units = self._plan_multi_dispense(step, items)
         else:
-            groups = self._group_sequential(items)
-        groups.sort(key=lambda g: g.first_index)
-        return TransferPlan(step, tuple(self._to_ops(step, groups)))
+            groups = self._group_any(items) if step.ordering is Ordering.ANY else self._group_sequential(items)
+            groups.sort(key=lambda g: g.first_index)
+            units = [self._unit(step, group) for group in groups]
+        return TransferPlan(step, tuple(self._with_tips(step, units)))
 
     # --- grouping ------------------------------------------------------------------------
 
@@ -125,9 +146,14 @@ class ChannelPlanner:
             position += len(group.transfers)
         return groups
 
-    def _extract_fixed_groups(self, items: List[_Indexed], channels: int) -> Tuple[List[_Group], List[_Indexed]]:
-        """Pull every complete fixed-pitch group out of *items*; return the groups and the leftovers."""
-        min_volume = min(h.min_volume for h in self._fixed_heads if h.channels == channels)
+    def _extract_fixed_groups(self, items: List[_Indexed], channels: int,
+                              by_geometry: bool = False) -> Tuple[List[_Group], List[_Indexed]]:
+        """
+        Pull every complete fixed-pitch group out of *items*; return the groups and the leftovers.
+
+        With *by_geometry*, volumes are ignored and no head is chosen yet.
+        """
+        min_volume = 0 if by_geometry else min(h.min_volume for h in self._fixed_heads if h.channels == channels)
         lanes = self._fixed_lanes(channels)
         buckets: Dict[Hashable, Dict[_Lane, deque]] = defaultdict(lambda: defaultdict(deque))
         leftover: List[_Indexed] = []
@@ -143,17 +169,18 @@ class ChannelPlanner:
         for by_lane in buckets.values():
             while all(by_lane[lane] for lane in lanes):
                 members = [by_lane[lane].popleft() for lane in lanes]
-                groups.append(self._fixed_group(members, channels))
+                groups.append(self._fixed_group(members, channels, choose_head=not by_geometry))
             for queue in by_lane.values():
                 leftover.extend(queue)
         leftover.sort(key=lambda item: item[0])
         return groups, leftover
 
-    def _fixed_window(self, window: Sequence[_Indexed], channels: int) -> Optional[_Group]:
+    def _fixed_window(self, window: Sequence[_Indexed], channels: int, by_geometry: bool = False) -> Optional[_Group]:
         """A fixed-pitch group made of exactly the transfers in *window*, or ``None``."""
         if len(window) != channels:
             return None
-        if any(t.volume < min(h.min_volume for h in self._fixed_heads if h.channels == channels) for _, t in window):
+        min_volume = 0 if by_geometry else min(h.min_volume for h in self._fixed_heads if h.channels == channels)
+        if any(t.volume < min_volume for _, t in window):
             return None
         slots = [self._fixed_slot(t, channels) for _, t in window]
         if any(slot is None for slot in slots) or len({key for key, _ in slots}) != 1:
@@ -162,12 +189,13 @@ class ChannelPlanner:
         lanes = self._fixed_lanes(channels)
         if set(by_lane) != set(lanes) or _has_dependency([t for _, t in window]):
             return None
-        return self._fixed_group([by_lane[lane] for lane in lanes], channels)
+        return self._fixed_group([by_lane[lane] for lane in lanes], channels, choose_head=not by_geometry)
 
-    def _fixed_group(self, members: List[_Indexed], channels: int) -> _Group:
+    def _fixed_group(self, members: List[_Indexed], channels: int, choose_head: bool = True) -> _Group:
         transfers = [t for _, t in members]
-        head = self._choose_head([t.volume for t in transfers],
-                                 lambda h: h.channels == channels and h.pitch is Pitch.FIXED)
+        if not choose_head:
+            return _Group(None, HeadLayout.FIXED, transfers, min(i for i, _ in members))
+        head = self._choose_head([t.volume for t in transfers], self._fits_layout(HeadLayout.FIXED, channels))
         if head is None:  # eligibility is checked before grouping, so this means a bug
             raise PlanningError(f"No {channels}-channel head for {transfers[0].source} -> {transfers[0].dest}")
         return _Group(head, HeadLayout.FIXED, transfers, min(i for i, _ in members))
@@ -215,6 +243,14 @@ class ChannelPlanner:
             raise PlanningError(f"No pipette in profile '{self.profile.name}' can transfer {transfer.volume:g} µL "
                                 f"from {transfer.source} to {transfer.dest} on its own. Available: {', '.join(usable)}")
         return _Group(head, HeadLayout.SINGLE, [transfer], index)
+
+    @staticmethod
+    def _fits_layout(layout: HeadLayout, channels: int) -> Callable[[PipetteSpec], bool]:
+        if layout is HeadLayout.FIXED:
+            return lambda h: h.pitch is Pitch.FIXED and h.channels == channels
+        if layout is HeadLayout.INDEPENDENT:
+            return lambda h: h.pitch is Pitch.INDEPENDENT and h.channels >= channels
+        return lambda h: h.can_work_single
 
     def _choose_head(self, volumes: List[float], predicate: Callable[[PipetteSpec], bool]) -> Optional[PipetteSpec]:
         """The best head satisfying *predicate* that can handle every volume in *volumes*."""
@@ -268,28 +304,112 @@ class ChannelPlanner:
             raise PlanningError(f"{ref} refers to labware '{ref.labware}', which the plan does not declare")
         return labware.format
 
+    # --- multi-dispense --------------------------------------------------------------------
+
+    def _plan_multi_dispense(self, step: TransferSet, items: List[_Indexed]) -> List[_Unit]:
+        groups = self._group_by_geometry(step, items)
+        if step.ordering is Ordering.ANY:
+            # Bring together everything drawn from the same sources so it can share aspirations.
+            first_use: Dict[Tuple, int] = {}
+            for group in groups:
+                first_use.setdefault(self._run_key(group), group.first_index)
+            groups.sort(key=lambda g: (first_use[self._run_key(g)], g.first_index))
+        units: List[_Unit] = []
+        run: List[_Group] = []
+        for group in groups:
+            if run and self._run_key(group) != self._run_key(run[0]):
+                units += self._distribute_run(step, run)
+                run = []
+            run.append(group)
+        if run:
+            units += self._distribute_run(step, run)
+        return units
+
+    def _group_by_geometry(self, step: TransferSet, items: List[_Indexed]) -> List[_Group]:
+        """Group into fixed-pitch columns where possible and single transfers otherwise, choosing no heads."""
+        groups: List[_Group] = []
+        if step.ordering is Ordering.ANY:
+            remaining = items
+            for channels in self._fixed_channel_counts:
+                found, remaining = self._extract_fixed_groups(remaining, channels, by_geometry=True)
+                groups += found
+            groups += [_Group(None, HeadLayout.SINGLE, [transfer], index) for index, transfer in remaining]
+        else:
+            position = 0
+            while position < len(items):
+                group = next((g for g in (self._fixed_window(items[position:position + channels], channels,
+                                                             by_geometry=True)
+                                          for channels in self._fixed_channel_counts) if g), None)
+                if group is None:
+                    index, transfer = items[position]
+                    group = _Group(None, HeadLayout.SINGLE, [transfer], index)
+                groups.append(group)
+                position += len(group.transfers)
+        groups.sort(key=lambda g: g.first_index)
+        return groups
+
+    @staticmethod
+    def _run_key(group: _Group) -> Tuple:
+        return group.layout, len(group.transfers), group.sources
+
+    def _distribute_run(self, step: TransferSet, run: List[_Group]) -> List[_Unit]:
+        """Chain *run* (groups sharing layout and sources) into as few aspirations as the best head allows."""
+        layout, channels = run[0].layout, len(run[0].transfers)
+        volumes = [max(t.volume for t in group.transfers) for group in run]
+        best = None
+        for head in filter(self._fits_layout(layout, channels), self.profile.pipettes):
+            chunks = _pack(volumes, head.max_volume - step.disposal_volume)
+            if chunks is None or any(sum(volumes[i] for i in chunk) + step.disposal_volume < head.min_volume
+                                     for chunk in chunks):
+                continue
+            score = (len(chunks), head.max_volume)
+            if best is None or score < best[0]:
+                best = (score, head, chunks)
+        if best is None:
+            return self._without_multi_dispense(step, run)
+        _, head, chunks = best
+        return [_Unit(head, channels, run[0].sources,
+                      [DistributePass(head, layout, tuple(tuple(run[i].transfers) for i in chunk),
+                                      step.disposal_volume, step.liquid_class, step.touch_tip, step.blow_out)])
+                for chunk in chunks]
+
+    def _without_multi_dispense(self, step: TransferSet, run: List[_Group]) -> List[_Unit]:
+        """Ordinary transfers for a run no head can multi-dispense; columns no head fits become single transfers."""
+        units = []
+        for group in run:
+            head = self._choose_head([t.volume for t in group.transfers],
+                                     self._fits_layout(group.layout, len(group.transfers)))
+            if head is None:
+                units += [self._unit(step, self._single((group.first_index, t))) for t in group.transfers]
+            else:
+                group.head = head
+                units.append(self._unit(step, group))
+        return units
+
     # --- tips and passes -------------------------------------------------------------------
 
-    def _to_ops(self, step: TransferSet, groups: List[_Group]) -> List[Op]:
+    def _unit(self, step: TransferSet, group: _Group) -> _Unit:
+        return _Unit(group.head, len(group.transfers), group.sources, self._passes(step, group))
+
+    def _with_tips(self, step: TransferSet, units: List[_Unit]) -> List[Op]:
+        """Wrap each unit's passes in tip pickups and drops according to the step's tip policy."""
         ops: List[Op] = []
-        held: Dict[str, Tuple[PipetteSpec, int, Tuple[WellRef, ...]]] = {}  # head name -> (head, tips, sources)
-        for group in groups:
-            head = group.head
-            channels = len(group.transfers)
-            sources = tuple(t.source for t in group.transfers)
+        held: Dict[str, _Unit] = {}  # head name -> unit whose tips it holds
+        for unit in units:
+            head = unit.head
             current = held.get(head.name)
-            reuse = current is not None and current[1] == channels and (
-                step.tips is TipPolicy.ONE or (step.tips is TipPolicy.PER_SOURCE and current[2] == sources))
+            reuse = current is not None and current.channels == unit.channels and (
+                step.tips is TipPolicy.ONE or (step.tips is TipPolicy.PER_SOURCE and current.sources == unit.sources))
             if not reuse:
                 if current is not None:
                     ops.append(DropTips(head))
-                ops.append(PickUpTips(head, channels))
-                held[head.name] = (head, channels, sources)
-            ops += self._passes(step, group)
+                ops.append(PickUpTips(head, unit.channels))
+                held[head.name] = unit
+            ops += unit.passes
             if step.tips is TipPolicy.NEW_EACH:
                 ops.append(DropTips(head))
                 del held[head.name]
-        ops += [DropTips(head) for head, _, _ in held.values()]
+        ops += [DropTips(unit.head) for unit in held.values()]
         return ops
 
     def _passes(self, step: TransferSet, group: _Group) -> List[TransferPass]:
@@ -304,6 +424,23 @@ class ChannelPlanner:
                           for t in group.transfers)
             passes.append(TransferPass(head, group.layout, chunk, step.liquid_class, step.touch_tip, step.blow_out))
         return passes
+
+
+def _pack(volumes: List[float], capacity: float) -> Optional[List[List[int]]]:
+    """Split consecutive *volumes* into chunks totalling at most *capacity*; ``None`` if one alone won't fit."""
+    if capacity <= 0 or max(volumes) > capacity + 1e-9:
+        return None
+    chunks: List[List[int]] = []
+    current: List[int] = []
+    total = 0.0
+    for index, volume in enumerate(volumes):
+        if current and total + volume > capacity + 1e-9:
+            chunks.append(current)
+            current, total = [], 0.0
+        current.append(index)
+        total += volume
+    chunks.append(current)
+    return chunks
 
 
 def _pass_count(volume: float, head: PipetteSpec) -> int:

@@ -5,7 +5,7 @@ import pytest
 from opentrons.simulate import simulate
 
 from lablibre import (OFF_DECK, FileRole, Liquid, LiquidClass, Mix, MoveLabware, Pause, PipetteSpec, Plan,
-                      RobotProfile, SetLid, SetTemperature, ThermalProfile, ThermalStep, TipPolicy, TransferSet,
+                      RobotProfile, SetLid, SetTemperature, ThermalProfile, ThermalStep, TipPolicy, Transfer, TransferSet,
                       compile_plan, load_profile, transfers)
 from lablibre.emitters import EmitError, OT2Emitter
 
@@ -160,3 +160,53 @@ def test_many_tips_load_extra_racks():
 def test_unsupported_profiles_raise(changes, message):
     with pytest.raises(EmitError, match=message):
         OT2Emitter().compile(_plating_plan(), _profile(**changes))
+
+
+def _lb_plan(wells=6, **kwargs):
+    plan = Plan("LB")
+    tubes = plan.add_labware("tubes", "tube_rack_15")
+    plate = plan.add_labware("plate", "plate_96", max_volume_ul=100)
+    plan.load(tubes["A1"], Liquid("LB"), 10000)
+    plan.add(TransferSet(transfers([(tubes["A1"], w, 18) for w in plate.wells()[:wells]]), tips=TipPolicy.ONE,
+                         multi_dispense=True, disposal_volume=4, **kwargs))
+    return plan
+
+
+def test_multi_dispense_simulates_with_disposal_to_trash():
+    bundle = compile_plan(_lb_plan(), load_profile("ot2_default"))
+    code = _protocol(bundle).content
+    assert "def _distribute(" in code and "def _move(" not in code  # only helpers that are used
+    log = _simulate(bundle)
+    assert sum(line.startswith("Aspirating") for line in log) == 1
+    assert "Aspirating 112.0 uL from A1 of tubes on slot 2" in " ".join(log)
+    assert sum(line.startswith("Dispensing 18.0 uL") for line in log) == 6
+    assert any(line.startswith("Blowing out into Trash Bin") for line in log)
+    assert "1. Transfer (6 transfers): 6 transfers in 1 pass, 1 tip" in bundle.by_role(FileRole.SETUP)[0].content
+
+
+def test_multi_dispense_with_touch_tip_and_dispense_height_simulates():
+    plan = Plan("Spots")
+    tubes = plan.add_labware("tubes", "tube_rack_15")
+    agar = plan.add_labware("agar", "plate_96")
+    plan.load(tubes["A1"], Liquid("cells", LiquidClass.CELLS), 1000)
+    plan.add(TransferSet([Transfer(tubes["A1"], w, 4, dispense_below_top=8) for w in agar.wells()[:3]],
+                         tips=TipPolicy.ONE, multi_dispense=True, touch_tip=True))
+    bundle = compile_plan(plan, load_profile("ot2_default"))
+    assert "(agar['A1'].top(-8), 4)," in _protocol(bundle).content
+    log = _simulate(bundle)
+    assert sum(line.startswith("Touching tip") for line in log) == 3
+
+
+def test_multi_dispense_eight_channel_simulates():
+    plan = Plan("Fill plate")
+    reservoir = plan.add_labware("reservoir", "reservoir_12")
+    plate = plan.add_labware("plate", "plate_96", max_volume_ul=200)
+    plan.load(reservoir["A1"], Liquid("media"), 15000)
+    plan.add(TransferSet(transfers([(reservoir["A1"], w, 50) for w in plate.wells()]), tips=TipPolicy.ONE,
+                         multi_dispense=True, disposal_volume=10))
+    multi = PipetteSpec("p300_multi_gen2", channels=8, min_volume=20, max_volume=300, mount="right",
+                        tip_rack="opentrons_96_tiprack_300ul")
+    log = _simulate(compile_plan(plan, _profile(pipettes=[multi], modules=[])))
+    aspirations = [line for line in log if line.startswith("Aspirating")]
+    assert len(aspirations) == 3 and all("260.0 uL" in line for line in aspirations[:2])
+    assert sum(line.startswith("Dispensing 50.0 uL") for line in log) == 12

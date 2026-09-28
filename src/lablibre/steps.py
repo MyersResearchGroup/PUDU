@@ -88,8 +88,13 @@ class TransferSet(Step):
         ordering: Whether the transfers must run in the listed order.
         tips: When tips are replaced.
         touch_tip: Touch the tip to the destination well wall after dispensing.
-        blow_out: Blow out after each dispense.
+        blow_out: Blow out after each dispense (after the last one when multi-dispensing).
         label: Short description for comments and setup sheets, e.g. ``'Distribute LB'``.
+        multi_dispense: Let one aspiration serve several dispenses from the same source.
+            Needs a tip policy that reuses tips and no mixing. Dispenses may be smaller
+            than the pipette's minimum volume as long as each aspiration is not.
+        disposal_volume: Extra µL aspirated with each multi-dispense aspiration and
+            discarded afterwards, which evens out the dispensed volumes.
     """
     kind: ClassVar[str] = "transfer_set"
 
@@ -100,6 +105,8 @@ class TransferSet(Step):
     touch_tip: bool = False
     blow_out: bool = True
     label: str = ""
+    multi_dispense: bool = False
+    disposal_volume: float = 0
 
     def __post_init__(self):
         object.__setattr__(self, "transfers", tuple(self.transfers))
@@ -113,6 +120,15 @@ class TransferSet(Step):
             # PER_SOURCE would silently carry it back into the source. TipPolicy.ONE
             # is allowed: it is an explicit choice to use one tip for the whole set.
             raise ValueError(f"TransferSet '{self.label}': mix_after cannot be combined with tips=TipPolicy.PER_SOURCE")
+        if self.disposal_volume < 0:
+            raise ValueError(f"TransferSet '{self.label}': disposal_volume must be zero or positive")
+        if self.disposal_volume and not self.multi_dispense:
+            raise ValueError(f"TransferSet '{self.label}': disposal_volume only applies with multi_dispense=True")
+        if self.multi_dispense:
+            if self.tips is TipPolicy.NEW_EACH:
+                raise ValueError(f"TransferSet '{self.label}': multi_dispense needs a tip policy that reuses tips")
+            if any(t.mix_before or t.mix_after for t in self.transfers):
+                raise ValueError(f"TransferSet '{self.label}': multi_dispense cannot be combined with mixing")
 
     def sources(self) -> List[WellRef]:
         """Distinct source wells, in first-use order."""

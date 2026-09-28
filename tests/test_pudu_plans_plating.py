@@ -134,3 +134,14 @@ def test_plating_validation_still_applies():
         PlatingProtocol(plating_data={"bacterium_locations": {"A1": "GFP"}}, number_dilutions=3)
     with pytest.raises(ValueError, match="Must input bacterium_locations"):
         PlatingProtocol()
+
+
+def test_lb_is_multi_dispensed_with_the_large_pipette(tmp_path, monkeypatch):
+    bundle = _port_bundle({"bacterium_locations": {"A1": "GFP", "B1": "RFP", "C1": "YFP"}}, {})
+    log = _run_log(bundle.get("plating.py").content)
+    first = next(i for i, line in enumerate(log) if "Distribute LB" in line)
+    last = next(i for i, line in enumerate(log) if "dilute and plate dilution 1" in line)
+    lb_step = log[first:last]
+    assert [line.split(" at ")[0] for line in lb_step if line.startswith("Aspirating")] == [
+        "Aspirating 112.0 uL from A1 of lb_tubes on slot 2"]  # 6 wells x 18 µL + 4 µL disposal
+    assert sum("Filter Tip Rack 200" in line for line in lb_step if line.startswith("Picking up tip")) == 1

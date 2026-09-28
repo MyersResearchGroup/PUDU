@@ -34,6 +34,7 @@ from pudu.plating import Plating
 
 MIX_REPETITIONS = 5              # same as pudu.plating.Plating
 AGAR_DISPENSE_BELOW_TOP = 8      # mm; spot above the agar surface without touching it
+LB_DISPOSAL_VOLUME = 4           # µL; same as the distribute call in pudu.plating.Plating
 MAX_CONSTRUCTS = 96
 
 # Plating parameters that describe hardware. They now live in the robot profile.
@@ -59,8 +60,8 @@ class PlatingProtocol:
 
     For each construct, one tip carries bacteria into dilution 1, seeds
     dilution 2 and spots every dilution-1 replicate; a second tip spots the
-    dilution-2 replicates. LB is distributed to all dilution wells with a
-    single tip first.
+    dilution-2 replicates. LB is first multi-dispensed to all dilution wells
+    with a single tip.
     """
 
     def __init__(self, plating_data: Optional[Dict] = None, json_params: Optional[Dict] = None, **params):
@@ -105,7 +106,8 @@ class PlatingProtocol:
         plan.add(SetTemperature("thermocycler", 4))
         plan.add(SetLid("thermocycler", open=True))
         plan.add(TransferSet(transfers([(lb_tube, w, p.volume_lb_transfer) for w in dilution_1 + dilution_2]),
-                             tips=TipPolicy.ONE, label="Distribute LB to dilution wells"))
+                             tips=TipPolicy.ONE, multi_dispense=True, disposal_volume=LB_DISPOSAL_VOLUME,
+                             label="Distribute LB to dilution wells"))
 
         mix = Mix(p.volume_lb_transfer + p.volume_bacteria_transfer - 1, MIX_REPETITIONS)
         for index, (well, names) in enumerate(constructs):

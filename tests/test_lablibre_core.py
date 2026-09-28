@@ -226,3 +226,19 @@ def test_profile_resolves_labware_on_modules_before_plain_format():
     rack = plan.add_labware("rack", "tube_rack_24")
     assert profile.resolve_labware(block, ModuleKind.TEMPERATURE) == "opentrons_24_aluminumblock_nest_1.5ml_snapcap"
     assert profile.resolve_labware(rack) == "opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap"
+
+
+def test_multi_dispense_validation():
+    plan = Plan("p")
+    plate = plan.add_labware("plate", "plate_96")
+    moves = transfers([(plate["A1"], plate["B1"], 5), (plate["A1"], plate["C1"], 5)])
+    TransferSet(moves, tips=TipPolicy.ONE, multi_dispense=True, disposal_volume=2)
+    with pytest.raises(ValueError, match="reuses tips"):
+        TransferSet(moves, multi_dispense=True)
+    with pytest.raises(ValueError, match="mixing"):
+        TransferSet(transfers([(plate["A1"], plate["B1"], 5)], mix_before=Mix(3)), tips=TipPolicy.ONE,
+                    multi_dispense=True)
+    with pytest.raises(ValueError, match="only applies with multi_dispense"):
+        TransferSet(moves, tips=TipPolicy.ONE, disposal_volume=2)
+    with pytest.raises(ValueError, match="zero or positive"):
+        TransferSet(moves, tips=TipPolicy.ONE, multi_dispense=True, disposal_volume=-1)

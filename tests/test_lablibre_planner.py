@@ -1,8 +1,8 @@
 import pytest
 
-from lablibre import (Liquid, Mix, Ordering, Plan, PipetteSpec, RobotProfile, TipPolicy, TransferSet,
+from lablibre import (Liquid, Mix, Ordering, Plan, PipetteSpec, RobotProfile, TipPolicy, Transfer, TransferSet,
                       load_profile, transfers)
-from lablibre.ops import DropTips, HeadLayout, PickUpTips, TransferPass
+from lablibre.ops import DistributePass, DropTips, HeadLayout, PickUpTips, TransferPass
 from lablibre.planner import ChannelPlanner, PlanningError
 
 P20 = PipetteSpec("p20_single", channels=1, min_volume=1, max_volume=20)
@@ -218,3 +218,89 @@ def test_plan_all_on_ot2_default_profile():
     assert planned[1].tips_used() == {"p300_single_gen2": 1}
     assert isinstance(planned[1].ops[0], PickUpTips) and isinstance(planned[1].ops[-1], DropTips)
     assert all(isinstance(op, TransferPass) for op in planned[1].ops[1:-1])
+
+
+# --- multi-dispense ------------------------------------------------------------------------
+
+P300 = PipetteSpec("p300_single", channels=1, min_volume=20, max_volume=200)
+
+
+def _distribute(pairs, **kwargs):
+    kwargs.setdefault("tips", TipPolicy.ONE)
+    return TransferSet(transfers(pairs), multi_dispense=True, **kwargs)
+
+
+def test_multi_dispense_uses_one_aspiration_on_the_head_needing_fewest():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    step = _distribute([(tubes["A1"], w, 18) for w in plate.wells()[:6]], disposal_volume=4)
+    result = _plan_step(_profile(P20, P300), plan, step)
+    [single] = result.passes()
+    assert isinstance(single, DistributePass) and single.pipette.name == "p300_single"
+    assert single.aspirate_volume == 112 and len(single.dispenses) == 6
+    assert result.tips_used() == {"p300_single": 1}
+
+
+def test_multi_dispense_splits_into_aspirations_that_fit():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    step = _distribute([(tubes["A1"], w, 18) for w in plate.wells()[:24]], disposal_volume=4)
+    passes = _plan_step(_profile(P20, P300), plan, step).passes()
+    assert [len(p.dispenses) for p in passes] == [10, 10, 4]
+    assert all(p.aspirate_volume <= 200 for p in passes)
+
+
+def test_multi_dispense_prefers_small_head_when_large_one_is_below_its_minimum():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    passes = _plan_step(_profile(P20, P300), plan, _distribute([(tubes["A1"], plate["A1"], 10)])).passes()
+    assert passes[0].pipette.name == "p20_single" and isinstance(passes[0], DistributePass)
+
+
+def test_multi_dispense_falls_back_to_transfers_when_no_head_can():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    passes = _plan_step(_profile(P20, P300), plan, _distribute([(tubes["A1"], plate["A1"], 250)])).passes()
+    assert all(isinstance(p, TransferPass) for p in passes)
+    assert [p.transfers[0].volume for p in passes] == [125, 125]
+
+
+def test_multi_dispense_with_eight_channels_fills_columns():
+    plan = _plan()
+    reservoir, plate = plan.labware["reservoir"], plan.labware["plate"]
+    result = _plan_step(_profile(P300_MULTI, P20), plan,
+                        _distribute([(reservoir["A1"], w, 10) for w in plate.wells()]))
+    [single] = result.passes()
+    assert single.layout is HeadLayout.FIXED and len(single.dispenses) == 12
+    assert [d[0].dest.well for d in single.dispenses] == [f"A{c}" for c in range(1, 13)]
+    assert result.tips_used() == {"p300_multi": 8}
+
+
+def test_multi_dispense_column_too_small_for_multichannel_uses_single_channel():
+    plan = _plan()
+    reservoir, plate = plan.labware["reservoir"], plan.labware["plate"]
+    result = _plan_step(_profile(P300_MULTI, P20), plan,
+                        _distribute([(reservoir["A1"], w, 5) for w in plate.columns()[0]]))
+    assert {p.pipette.name for p in result.passes()} == {"p20_single"}
+
+
+def test_multi_dispense_chains_by_source():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    pairs = [(tubes["A1"], plate["A1"], 5), (tubes["B1"], plate["B1"], 5),
+             (tubes["A1"], plate["C1"], 5), (tubes["B1"], plate["D1"], 5)]
+    any_order = _plan_step(_profile(P20), plan, _distribute(pairs, tips=TipPolicy.PER_SOURCE))
+    assert [[d[0].dest.well for d in p.dispenses] for p in any_order.passes()] == [["A1", "C1"], ["B1", "D1"]]
+    assert any_order.tips_used() == {"p20_single": 2}
+    in_order = _plan_step(_profile(P20), plan, _distribute(pairs, tips=TipPolicy.PER_SOURCE,
+                                                           ordering=Ordering.SEQUENTIAL))
+    assert len(in_order.passes()) == 4 and in_order.tips_used() == {"p20_single": 4}
+
+
+def test_multi_dispense_keeps_dispense_height():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    step = TransferSet([Transfer(tubes["A1"], plate["A1"], 4, dispense_below_top=8)], tips=TipPolicy.ONE,
+                       multi_dispense=True)
+    [single] = _plan_step(_profile(P20), plan, step).passes()
+    assert single.dispenses[0][0].dispense_below_top == 8

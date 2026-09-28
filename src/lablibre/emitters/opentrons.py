@@ -19,7 +19,7 @@ from lablibre.emitters.base import CodeWriter, Emitter, EmitError, Namer, format
 from lablibre.labware import Labware, WellRef
 from lablibre.liquids import Liquid
 from lablibre.modules import ModuleKind
-from lablibre.ops import DropTips, PickUpTips, TransferPass, TransferPlan
+from lablibre.ops import DistributePass, DropTips, PickUpTips, TransferPass, TransferPlan
 from lablibre.plan import Plan
 from lablibre.planner import ChannelPlanner
 from lablibre.profile import ModuleSpec, Pitch, PipetteSpec, RobotProfile
@@ -33,7 +33,7 @@ HANDLING_KEYS = {"aspiration_rate", "dispense_rate"}
 LIQUID_COLORS = ["#4040BF", "#BF4040", "#40BF40", "#A640BF", "#BFBF40", "#BF7340",
                  "#40BFBF", "#BF40A6", "#73BF40", "#4073BF", "#BF8C40", "#40BF73"]
 
-# Emitted once into every protocol; the only helper the generated code needs.
+# Helpers emitted into protocols that use them; the generated code needs nothing else.
 _MOVE_HELPER = '''
 def _move(pipette, source, dest, volume, aspiration_rate=1.0, dispense_rate=1.0,
           mix_before=None, mix_after=None, touch_tip=False, blow_out=True, dispense_below_top=None):
@@ -49,6 +49,19 @@ def _move(pipette, source, dest, volume, aspiration_rate=1.0, dispense_rate=1.0,
         pipette.blow_out()
     if touch_tip:
         pipette.touch_tip(dest)
+'''
+
+_DISTRIBUTE_HELPER = '''
+def _distribute(pipette, source, dispenses, trash, disposal=0, aspiration_rate=1.0, dispense_rate=1.0,
+                touch_tip=False, blow_out=True):
+    """Aspirate once from source, dispense each (location, volume), then discard what is left in the trash."""
+    pipette.aspirate(sum(volume for _, volume in dispenses) + disposal, source, rate=aspiration_rate)
+    for dest, volume in dispenses:
+        pipette.dispense(volume, dest, rate=dispense_rate)
+        if touch_tip:
+            pipette.touch_tip()
+    if disposal or blow_out:
+        pipette.blow_out(trash)
 '''
 
 _OT2_MODULE_KINDS = {ModuleKind.TEMPERATURE, ModuleKind.THERMOCYCLER}
@@ -219,8 +232,11 @@ class OT2Emitter(Emitter):
         out.line("# Pipetting settings per liquid class (from the robot profile)")
         out.line(f"HANDLING = {repr(handling)}")
         out.line()
-        out.lines(_MOVE_HELPER)
-        out.line()
+        used = {type(op) for transfer_plan in planned.values() for op in transfer_plan.ops}
+        for op_type, helper in ((TransferPass, _MOVE_HELPER), (DistributePass, _DISTRIBUTE_HELPER)):
+            if op_type in used:
+                out.lines(helper)
+                out.line()
         out.line()
         out.line("def run(protocol: protocol_api.ProtocolContext):")
         with out.indented():
@@ -287,6 +303,9 @@ class OT2Emitter(Emitter):
                     out.line(f"{pipette}.drop_tip()")
                 elif isinstance(op, TransferPass):
                     out.line(self._render_pass(op, pipette, deck, handling))
+                elif isinstance(op, DistributePass):
+                    for line in self._render_distribute(op, pipette, deck, handling):
+                        out.line(line)
         elif isinstance(step, SetTemperature):
             self._render_set_temperature(out, step, deck)
         elif isinstance(step, SetLid):
@@ -335,6 +354,24 @@ class OT2Emitter(Emitter):
         if not op.blow_out:
             args.append("blow_out=False")
         return f"_move({', '.join(args)})"
+
+    def _render_distribute(self, op: DistributePass, pipette: str, deck: _Deck,
+                           handling: Dict[str, Dict[str, float]]) -> List[str]:
+        """The ``_distribute`` call, one dispense per line; 8-channel dispenses address each column by its top well."""
+        lines = [f"_distribute({pipette}, {self._well(op.dispenses[0][0].source, deck)}, ["]
+        lines += [f"    ({self._location(dispense[0], deck)}, {format_number(dispense[0].volume)}),"
+                  for dispense in op.dispenses]
+        args = ["protocol.fixed_trash"]
+        if op.disposal_volume:
+            args.append(f"disposal={format_number(op.disposal_volume)}")
+        if op.liquid_class.value in handling:
+            args.append(f"**HANDLING[{op.liquid_class.value!r}]")
+        if op.touch_tip:
+            args.append("touch_tip=True")
+        if not op.blow_out:
+            args.append("blow_out=False")
+        lines.append(f"], {', '.join(args)})")
+        return lines
 
     def _render_set_temperature(self, out: CodeWriter, step: SetTemperature, deck: _Deck) -> None:
         var = deck.module_vars.get(step.module)
@@ -430,6 +467,13 @@ class OT2Emitter(Emitter):
     @staticmethod
     def _well(ref: WellRef, deck: _Deck) -> str:
         return f"{deck.labware_vars[ref.labware]}[{ref.well!r}]"
+
+    def _location(self, transfer, deck: _Deck) -> str:
+        """Where *transfer* dispenses: the destination well, or a point below its top."""
+        well = self._well(transfer.dest, deck)
+        if transfer.dispense_below_top is None:
+            return well
+        return f"{well}.top(-{format_number(transfer.dispense_below_top)})"
 
     @staticmethod
     def _lid_word(step: SetLid) -> str:

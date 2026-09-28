@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import ClassVar, Dict, List, Tuple
+from typing import ClassVar, Dict, List, Tuple, Union
 
 from lablibre.liquids import LiquidClass
 from lablibre.profile import PipetteSpec
@@ -66,13 +66,40 @@ class TransferPass(Op):
 
 
 @dataclass(frozen=True)
+class DistributePass(Op):
+    """
+    One aspiration that serves several dispenses.
+
+    Each entry of ``dispenses`` is one dispense in which every channel acts at
+    once (``dispenses[k][i]`` is channel ``i``'s part); all entries draw from
+    the same sources. The head aspirates the dispensed total plus
+    ``disposal_volume`` per channel, and discards what is left at the end.
+    """
+    kind: ClassVar[str] = "distribute_pass"
+
+    pipette: PipetteSpec
+    layout: HeadLayout
+    dispenses: Tuple[Tuple[Transfer, ...], ...]
+    disposal_volume: float
+    liquid_class: LiquidClass
+    touch_tip: bool
+    blow_out: bool
+
+    @property
+    def aspirate_volume(self) -> float:
+        """Volume each channel aspirates."""
+        return sum(dispense[0].volume for dispense in self.dispenses) + self.disposal_volume
+
+
+@dataclass(frozen=True)
 class TransferPlan:
     """The operations that carry out one :class:`~lablibre.steps.TransferSet` on one robot."""
     step: TransferSet
     ops: Tuple[Op, ...]
 
-    def passes(self) -> List[TransferPass]:
-        return [op for op in self.ops if isinstance(op, TransferPass)]
+    def passes(self) -> List[Union[TransferPass, DistributePass]]:
+        """Every aspiration cycle, whether it serves one dispense or several."""
+        return [op for op in self.ops if isinstance(op, (TransferPass, DistributePass))]
 
     def tips_used(self) -> Dict[str, int]:
         """Number of tips consumed per pipette name."""
