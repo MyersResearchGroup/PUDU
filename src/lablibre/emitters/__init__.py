@@ -3,11 +3,12 @@ from typing import Dict, Type
 
 from lablibre.bundle import Bundle
 from lablibre.emitters.base import Emitter, EmitError
+from lablibre.emitters.manual import ManualEmitter
 from lablibre.emitters.opentrons import OT2Emitter
 from lablibre.plan import Plan
 from lablibre.profile import RobotProfile
 
-EMITTERS: Dict[str, Type[Emitter]] = {robot: cls for cls in (OT2Emitter,) for robot in cls.robots}
+EMITTERS: Dict[str, Type[Emitter]] = {robot: cls for cls in (OT2Emitter, ManualEmitter) for robot in cls.robots}
 
 
 def compile_plan(plan: Plan, profile: RobotProfile) -> Bundle:

@@ -195,7 +195,7 @@ class ChannelPlanner:
         transfers = [t for _, t in members]
         if not choose_head:
             return _Group(None, HeadLayout.FIXED, transfers, min(i for i, _ in members))
-        head = self._choose_head([t.volume for t in transfers], self._fits_layout(HeadLayout.FIXED, channels))
+        head = self._choose_head(transfers, self._fits_layout(HeadLayout.FIXED, channels))
         if head is None:  # eligibility is checked before grouping, so this means a bug
             raise PlanningError(f"No {channels}-channel head for {transfers[0].source} -> {transfers[0].dest}")
         return _Group(head, HeadLayout.FIXED, transfers, min(i for i, _ in members))
@@ -237,7 +237,7 @@ class ChannelPlanner:
 
     def _single(self, item: _Indexed) -> _Group:
         index, transfer = item
-        head = self._choose_head([transfer.volume], lambda h: h.can_work_single)
+        head = self._choose_head([transfer], lambda h: h.can_work_single)
         if head is None:
             usable = [f"{h.name} ({h.min_volume:g}-{h.max_volume:g} µL, {h.channels}ch)" for h in self.profile.pipettes]
             raise PlanningError(f"No pipette in profile '{self.profile.name}' can transfer {transfer.volume:g} µL "
@@ -252,10 +252,18 @@ class ChannelPlanner:
             return lambda h: h.pitch is Pitch.INDEPENDENT and h.channels >= channels
         return lambda h: h.can_work_single
 
-    def _choose_head(self, volumes: List[float], predicate: Callable[[PipetteSpec], bool]) -> Optional[PipetteSpec]:
-        """The best head satisfying *predicate* that can handle every volume in *volumes*."""
+    def _choose_head(self, transfers: List[Transfer], predicate: Callable[[PipetteSpec], bool]) -> Optional[PipetteSpec]:
+        """
+        The best head satisfying *predicate* that can handle every transfer's volume.
+
+        Among those, prefer one whose capacity also covers the largest mix, so a
+        2 µL transfer followed by a 19 µL mix goes to a P20 rather than a P2.
+        """
+        volumes = [t.volume for t in transfers]
         low, high = min(volumes), max(volumes)
-        return next((h for h in self.profile.pipettes_for(high) if predicate(h) and h.min_volume <= low), None)
+        mix_volume = max((m.volume for t in transfers for m in (t.mix_before, t.mix_after) if m), default=0)
+        candidates = [h for h in self.profile.pipettes_for(high) if predicate(h) and h.min_volume <= low]
+        return next((h for h in candidates if h.max_volume >= mix_volume), candidates[0] if candidates else None)
 
     # --- fixed-pitch geometry --------------------------------------------------------------
 
@@ -377,8 +385,7 @@ class ChannelPlanner:
         """Ordinary transfers for a run no head can multi-dispense; columns no head fits become single transfers."""
         units = []
         for group in run:
-            head = self._choose_head([t.volume for t in group.transfers],
-                                     self._fits_layout(group.layout, len(group.transfers)))
+            head = self._choose_head(group.transfers, self._fits_layout(group.layout, len(group.transfers)))
             if head is None:
                 units += [self._unit(step, self._single((group.first_index, t))) for t in group.transfers]
             else:

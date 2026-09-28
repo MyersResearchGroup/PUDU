@@ -304,3 +304,15 @@ def test_multi_dispense_keeps_dispense_height():
                        multi_dispense=True)
     [single] = _plan_step(_profile(P20), plan, step).passes()
     assert single.dispenses[0][0].dispense_below_top == 8
+
+
+def test_head_choice_prefers_one_that_can_also_do_the_mix():
+    plan = _plan()
+    plate = plan.labware["plate"]
+    p2 = PipetteSpec("p2_single", channels=1, min_volume=0.2, max_volume=2)
+    plain = _plan_step(_profile(p2, P20), plan, TransferSet(transfers([(plate["A1"], plate["B1"], 2)])))
+    assert plain.passes()[0].pipette.name == "p2_single"
+    mixed = _plan_step(_profile(p2, P20), plan,
+                       TransferSet(transfers([(plate["A1"], plate["B1"], 2)], mix_after=Mix(19))))
+    assert mixed.passes()[0].pipette.name == "p20_single"
+    assert mixed.passes()[0].transfers[0].mix_after == Mix(19)

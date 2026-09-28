@@ -1,0 +1,27 @@
+{
+  "robot": "manual",
+  "name": "Bench (manual pipetting)",
+  "pipettes": [
+    {"name": "P2", "channels": 1, "min_volume": 0.2, "max_volume": 2},
+    {"name": "P20", "channels": 1, "min_volume": 2, "max_volume": 20},
+    {"name": "P200", "channels": 1, "min_volume": 20, "max_volume": 200},
+    {"name": "P1000", "channels": 1, "min_volume": 100, "max_volume": 1000}
+  ],
+  "modules": [
+    {"kind": "temperature", "model": "cold block or ice", "location": "bench"},
+    {"kind": "thermocycler", "model": "thermocycler", "location": "bench"}
+  ],
+  "labware": {
+    "plate_96": "96-well PCR plate",
+    "plate_384": "384-well plate",
+    "tube_rack_24": "1.5 mL tubes",
+    "tube_rack_15": "15 mL conical tubes",
+    "tube_rack_6": "50 mL conical tubes",
+    "reservoir_12": "12-channel reservoir",
+    "reservoir_1": "reagent reservoir"
+  },
+  "liquid_classes": {
+    "glycerol": {"note": "Viscous glycerol stock: pipette slowly and check the tip is empty after dispensing."},
+    "cells": {"note": "Cells: pipette gently."}
+  }
+}
