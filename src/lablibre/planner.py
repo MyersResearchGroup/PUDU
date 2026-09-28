@@ -359,27 +359,33 @@ class ChannelPlanner:
 
     @staticmethod
     def _run_key(group: _Group) -> Tuple:
-        return group.layout, len(group.transfers), group.sources
+        return group.layout, len(group.transfers), group.sources, group.transfers[0].mix_before
 
     def _distribute_run(self, step: TransferSet, run: List[_Group]) -> List[_Unit]:
         """Chain *run* (groups sharing layout and sources) into as few aspirations as the best head allows."""
         layout, channels = run[0].layout, len(run[0].transfers)
         volumes = [max(t.volume for t in group.transfers) for group in run]
+        mix = run[0].transfers[0].mix_before
         best = None
         for head in filter(self._fits_layout(layout, channels), self.profile.pipettes):
-            chunks = _pack(volumes, head.max_volume - step.disposal_volume)
+            chunks = _pack(volumes, head.max_volume - step.disposal_volume - step.air_gap)
             if chunks is None or any(sum(volumes[i] for i in chunk) + step.disposal_volume < head.min_volume
                                      for chunk in chunks):
                 continue
-            score = (len(chunks), head.max_volume)
+            # Like _choose_head: a head that can do the mix first, then fewest aspirations, then smallest.
+            mix_too_big = mix is not None and mix.volume > head.max_volume
+            score = (mix_too_big, len(chunks), head.max_volume)
             if best is None or score < best[0]:
                 best = (score, head, chunks)
         if best is None:
             return self._without_multi_dispense(step, run)
         _, head, chunks = best
+        first = run[0].transfers[0]
+        mix_before = self._fit_mix(first.mix_before, head, first.source, "before")
         return [_Unit(head, channels, run[0].sources,
                       [DistributePass(head, layout, tuple(tuple(run[i].transfers) for i in chunk),
-                                      step.disposal_volume, step.liquid_class, step.touch_tip, step.blow_out)])
+                                      step.disposal_volume, step.liquid_class, step.touch_tip, step.blow_out,
+                                      mix_before=mix_before, air_gap=step.air_gap)])
                 for chunk in chunks]
 
     def _without_multi_dispense(self, step: TransferSet, run: List[_Group]) -> List[_Unit]:
@@ -430,7 +436,10 @@ class ChannelPlanner:
     def _passes(self, step: TransferSet, group: _Group) -> List[TransferPass]:
         """Split *group* into passes that fit the head; mix before the first pass and after the last."""
         head = group.head
-        count = max(_pass_count(t.volume, head) for t in group.transfers)
+        if step.air_gap >= head.max_volume:
+            raise PlanningError(f"Air gap of {step.air_gap:g} µL leaves no room in {head.name} "
+                                f"({head.max_volume:g} µL)")
+        count = max(_pass_count(t.volume, head, step.air_gap) for t in group.transfers)
         mixes = {id(t): (self._fit_mix(t.mix_before, head, t.source, "before"),
                          self._fit_mix(t.mix_after, head, t.dest, "after")) for t in group.transfers}
         passes = []
@@ -439,7 +448,8 @@ class ChannelPlanner:
                                   mix_before=mixes[id(t)][0] if number == 0 else None,
                                   mix_after=mixes[id(t)][1] if number == count - 1 else None)
                           for t in group.transfers)
-            passes.append(TransferPass(head, group.layout, chunk, step.liquid_class, step.touch_tip, step.blow_out))
+            passes.append(TransferPass(head, group.layout, chunk, step.liquid_class, step.touch_tip, step.blow_out,
+                                       air_gap=step.air_gap))
         return passes
 
 
@@ -460,8 +470,8 @@ def _pack(volumes: List[float], capacity: float) -> Optional[List[List[int]]]:
     return chunks
 
 
-def _pass_count(volume: float, head: PipetteSpec) -> int:
-    return max(1, math.ceil(volume / head.max_volume - 1e-9))
+def _pass_count(volume: float, head: PipetteSpec, air_gap: float = 0) -> int:
+    return max(1, math.ceil(volume / (head.max_volume - air_gap) - 1e-9))
 
 
 

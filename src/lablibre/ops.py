@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import ClassVar, Dict, List, Tuple, Union
+from typing import ClassVar, Dict, List, Optional, Tuple, Union
 
 from lablibre.labware import WellRef
 from lablibre.liquids import LiquidClass
 from lablibre.profile import PipetteSpec
-from lablibre.steps import Transfer, TransferSet
+from lablibre.steps import Mix, Transfer, TransferSet
 
 
 class HeadLayout(str, Enum):
@@ -64,6 +64,7 @@ class TransferPass(Op):
     liquid_class: LiquidClass
     touch_tip: bool
     blow_out: bool
+    air_gap: float = 0
 
 
 @dataclass(frozen=True)
@@ -73,8 +74,9 @@ class DistributePass(Op):
 
     Each entry of ``dispenses`` is one dispense in which every channel acts at
     once (``dispenses[k][i]`` is channel ``i``'s part); all entries draw from
-    the same sources. The head aspirates the dispensed total plus
-    ``disposal_volume`` per channel, and discards what is left at the end.
+    the same sources. The head mixes the source (``mix_before``), aspirates the
+    dispensed total plus ``disposal_volume`` per channel, takes an ``air_gap``
+    before each dispense, and discards what is left at the end.
     """
     kind: ClassVar[str] = "distribute_pass"
 
@@ -85,6 +87,8 @@ class DistributePass(Op):
     liquid_class: LiquidClass
     touch_tip: bool
     blow_out: bool
+    mix_before: Optional[Mix] = None
+    air_gap: float = 0
 
     @property
     def aspirate_volume(self) -> float:

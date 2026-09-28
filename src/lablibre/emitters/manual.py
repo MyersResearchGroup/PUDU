@@ -210,7 +210,11 @@ class ManualEmitter(Emitter):
                 volumes = {d[0].volume for d in op.dispenses}
                 volume_text = f"{format_number(volumes.pop())} each" if len(volumes) == 1 else "see notes"
                 extra = f", including {format_number(op.disposal_volume)} µL extra" if op.disposal_volume else ""
-                notes = [f"aspirate {format_number(op.aspirate_volume)} µL once{extra}, then dispense into each well"]
+                notes = []
+                if op.mix_before:
+                    notes.append(f"mix {op.mix_before.repetitions} × {format_number(op.mix_before.volume)} µL "
+                                 f"before aspirating")
+                notes.append(f"aspirate {format_number(op.aspirate_volume)} µL once{extra}, then dispense into each well")
                 if op.disposal_volume:
                     notes.append("discard what is left")
                 if len(volumes) > 1:
@@ -235,7 +239,9 @@ class ManualEmitter(Emitter):
                              f"the {reduced.pipette} holds {format_number(reduced.used)} µL)")
                 notes.append(note)
         if transfer.dispense_below_top is not None:
-            notes.append(f"dispense {format_number(transfer.dispense_below_top)} mm below the rim")
+            depth = transfer.dispense_below_top
+            where = "below" if depth >= 0 else "above"
+            notes.append(f"dispense {format_number(abs(depth))} mm {where} the rim")
         if op.touch_tip:
             notes.append("touch the tip to the well wall")
         if op.layout is HeadLayout.FIXED:
@@ -265,12 +271,12 @@ class ManualEmitter(Emitter):
         lines.append(f"{load}, close the lid and run this program{lid}:")
         lines += ["", "| Temperature | Time |", "|---|---|"]
         lines += [f"| {s.celsius:g} °C | {_duration(s.seconds)} |" for s in step.steps]
-        lines.append("")
+        after = []
         if step.repetitions > 1:
-            lines.append(f"Repeat {step.repetitions} times (about {_duration(step.duration_seconds)} in total).")
+            after.append(f"Repeat {step.repetitions} times (about {_duration(step.duration_seconds)} in total).")
         if step.hold_celsius is not None:
-            lines.append(f"Then hold at {step.hold_celsius:g} °C.")
-        return lines
+            after.append(f"Then hold at {step.hold_celsius:g} °C.")
+        return lines + ([""] + after if after else [])
 
     # --- helpers ---------------------------------------------------------------------------
 

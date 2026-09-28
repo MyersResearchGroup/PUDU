@@ -53,7 +53,8 @@ class Transfer:
     Args:
         dispense_below_top: Dispense this many mm below the top of the destination well
             instead of at the robot's default height, e.g. ``8`` to spot onto agar without
-            touching it. ``None`` uses the default.
+            touching it. Negative values dispense above the rim (``-2`` is 2 mm above).
+            ``None`` uses the default.
     """
     source: WellRef
     dest: WellRef
@@ -65,8 +66,6 @@ class Transfer:
     def __post_init__(self):
         if self.volume <= 0:
             raise ValueError(f"Transfer volume must be positive, got {self.volume} ({self.source} -> {self.dest})")
-        if self.dispense_below_top is not None and self.dispense_below_top < 0:
-            raise ValueError(f"dispense_below_top must be zero or positive, got {self.dispense_below_top}")
 
 
 class Step:
@@ -91,10 +90,14 @@ class TransferSet(Step):
         blow_out: Blow out after each dispense (after the last one when multi-dispensing).
         label: Short description for comments and setup sheets, e.g. ``'Distribute LB'``.
         multi_dispense: Let one aspiration serve several dispenses from the same source.
-            Needs a tip policy that reuses tips and no mixing. Dispenses may be smaller
-            than the pipette's minimum volume as long as each aspiration is not.
+            Needs a tip policy that reuses tips and no ``mix_after``; ``mix_before`` mixes
+            the source before each aspiration. Dispenses may be smaller than the
+            pipette's minimum volume as long as each aspiration is not.
         disposal_volume: Extra µL aspirated with each multi-dispense aspiration and
             discarded afterwards, which evens out the dispensed volumes.
+        air_gap: µL of air drawn in after aspirating (and before each dispense when
+            multi-dispensing) so liquid doesn't drip while the tip moves. Robots only;
+            the bench protocol ignores it.
     """
     kind: ClassVar[str] = "transfer_set"
 
@@ -107,6 +110,7 @@ class TransferSet(Step):
     label: str = ""
     multi_dispense: bool = False
     disposal_volume: float = 0
+    air_gap: float = 0
 
     def __post_init__(self):
         object.__setattr__(self, "transfers", tuple(self.transfers))
@@ -122,13 +126,15 @@ class TransferSet(Step):
             raise ValueError(f"TransferSet '{self.label}': mix_after cannot be combined with tips=TipPolicy.PER_SOURCE")
         if self.disposal_volume < 0:
             raise ValueError(f"TransferSet '{self.label}': disposal_volume must be zero or positive")
+        if self.air_gap < 0:
+            raise ValueError(f"TransferSet '{self.label}': air_gap must be zero or positive")
         if self.disposal_volume and not self.multi_dispense:
             raise ValueError(f"TransferSet '{self.label}': disposal_volume only applies with multi_dispense=True")
         if self.multi_dispense:
             if self.tips is TipPolicy.NEW_EACH:
                 raise ValueError(f"TransferSet '{self.label}': multi_dispense needs a tip policy that reuses tips")
-            if any(t.mix_before or t.mix_after for t in self.transfers):
-                raise ValueError(f"TransferSet '{self.label}': multi_dispense cannot be combined with mixing")
+            if any(t.mix_after for t in self.transfers):
+                raise ValueError(f"TransferSet '{self.label}': multi_dispense cannot be combined with mix_after")
 
     def sources(self) -> List[WellRef]:
         """Distinct source wells, in first-use order."""

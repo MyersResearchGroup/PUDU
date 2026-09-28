@@ -318,3 +318,14 @@ def test_head_choice_prefers_one_that_can_also_do_the_mix():
                        TransferSet(transfers([(plate["A1"], plate["B1"], 2)], mix_after=Mix(19))))
     assert mixed.passes()[0].pipette.name == "p20_single"
     assert mixed.passes()[0].transfers[0].mix_after == Mix(19)
+
+
+def test_multi_dispense_prefers_a_head_that_can_do_the_source_mix():
+    plan = _plan()
+    tubes, plate = plan.labware["tubes"], plan.labware["plate"]
+    step = TransferSet(transfers([(tubes["A1"], plate["A1"], 20)], mix_before=Mix(50)), tips=TipPolicy.ONE,
+                       multi_dispense=True)
+    result = _plan_step(_profile(P20, P300), plan, step)
+    [single] = result.passes()
+    assert single.pipette.name == "p300_single" and single.mix_before == Mix(50)
+    assert result.warnings == ()

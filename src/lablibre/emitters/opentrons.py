@@ -36,13 +36,15 @@ LIQUID_COLORS = ["#4040BF", "#BF4040", "#40BF40", "#A640BF", "#BFBF40", "#BF7340
 # Helpers emitted into protocols that use them; the generated code needs nothing else.
 _MOVE_HELPER = '''
 def _move(pipette, source, dest, volume, aspiration_rate=1.0, dispense_rate=1.0,
-          mix_before=None, mix_after=None, touch_tip=False, blow_out=True, dispense_below_top=None):
+          mix_before=None, mix_after=None, touch_tip=False, blow_out=True, dispense_below_top=None, air_gap=0):
     """Aspirate from source and dispense into dest. Mixes are (volume, repetitions)."""
     if mix_before:
         pipette.mix(mix_before[1], mix_before[0], source)
     pipette.aspirate(volume, source, rate=aspiration_rate)
+    if air_gap:
+        pipette.air_gap(air_gap)
     target = dest if dispense_below_top is None else dest.top(-dispense_below_top)
-    pipette.dispense(volume, target, rate=dispense_rate)
+    pipette.dispense(volume + air_gap, target, rate=dispense_rate)
     if mix_after:
         pipette.mix(mix_after[1], mix_after[0], dest)
     if blow_out:
@@ -53,11 +55,18 @@ def _move(pipette, source, dest, volume, aspiration_rate=1.0, dispense_rate=1.0,
 
 _DISTRIBUTE_HELPER = '''
 def _distribute(pipette, source, dispenses, trash, disposal=0, aspiration_rate=1.0, dispense_rate=1.0,
-                touch_tip=False, blow_out=True):
-    """Aspirate once from source, dispense each (location, volume), then discard what is left in the trash."""
+                touch_tip=False, blow_out=True, mix_before=None, air_gap=0):
+    """
+    Aspirate once from source, dispense each (location, volume), then discard what is left in the trash.
+    mix_before is (volume, repetitions) at the source; an air gap is taken before each dispense.
+    """
+    if mix_before:
+        pipette.mix(mix_before[1], mix_before[0], source)
     pipette.aspirate(sum(volume for _, volume in dispenses) + disposal, source, rate=aspiration_rate)
     for dest, volume in dispenses:
-        pipette.dispense(volume, dest, rate=dispense_rate)
+        if air_gap:
+            pipette.air_gap(air_gap)
+        pipette.dispense(volume + air_gap, dest, rate=dispense_rate)
         if touch_tip:
             pipette.touch_tip()
     if disposal or blow_out:
@@ -352,6 +361,8 @@ class OT2Emitter(Emitter):
             args.append(f"mix_after=({format_number(transfer.mix_after.volume)}, {transfer.mix_after.repetitions})")
         if transfer.dispense_below_top is not None:
             args.append(f"dispense_below_top={format_number(transfer.dispense_below_top)}")
+        if op.air_gap:
+            args.append(f"air_gap={format_number(op.air_gap)}")
         if op.touch_tip:
             args.append("touch_tip=True")
         if not op.blow_out:
@@ -367,6 +378,10 @@ class OT2Emitter(Emitter):
         args = ["protocol.fixed_trash"]
         if op.disposal_volume:
             args.append(f"disposal={format_number(op.disposal_volume)}")
+        if op.mix_before:
+            args.append(f"mix_before=({format_number(op.mix_before.volume)}, {op.mix_before.repetitions})")
+        if op.air_gap:
+            args.append(f"air_gap={format_number(op.air_gap)}")
         if op.liquid_class.value in handling:
             args.append(f"**HANDLING[{op.liquid_class.value!r}]")
         if op.touch_tip:
@@ -479,7 +494,7 @@ class OT2Emitter(Emitter):
         well = self._well(transfer.dest, deck)
         if transfer.dispense_below_top is None:
             return well
-        return f"{well}.top(-{format_number(transfer.dispense_below_top)})"
+        return f"{well}.top({format_number(-transfer.dispense_below_top)})"
 
     @staticmethod
     def _lid_word(step: SetLid) -> str:

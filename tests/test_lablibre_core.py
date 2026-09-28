@@ -67,8 +67,7 @@ def test_transfer_set_rejects_implicit_tip_reuse_with_mix_after():
     with pytest.raises(ValueError, match="mix_after"):
         TransferSet([Transfer(plate["A1"], plate["B1"], 5, mix_after=Mix(5))], tips=TipPolicy.PER_SOURCE)
     TransferSet([Transfer(plate["A1"], plate["B1"], 5, mix_after=Mix(5))], tips=TipPolicy.ONE)  # explicit choice
-    with pytest.raises(ValueError, match="dispense_below_top"):
-        Transfer(plate["A1"], plate["B1"], 5, dispense_below_top=-1)
+    assert Transfer(plate["A1"], plate["B1"], 5, dispense_below_top=-2).dispense_below_top == -2  # above the rim
     with pytest.raises(ValueError):
         TransferSet([])
     with pytest.raises(ValueError):
@@ -235,10 +234,26 @@ def test_multi_dispense_validation():
     TransferSet(moves, tips=TipPolicy.ONE, multi_dispense=True, disposal_volume=2)
     with pytest.raises(ValueError, match="reuses tips"):
         TransferSet(moves, multi_dispense=True)
-    with pytest.raises(ValueError, match="mixing"):
-        TransferSet(transfers([(plate["A1"], plate["B1"], 5)], mix_before=Mix(3)), tips=TipPolicy.ONE,
+    with pytest.raises(ValueError, match="mix_after"):
+        TransferSet(transfers([(plate["A1"], plate["B1"], 5)], mix_after=Mix(3)), tips=TipPolicy.ONE,
                     multi_dispense=True)
+    # Mixing the source before each aspiration is fine.
+    TransferSet(transfers([(plate["A1"], plate["B1"], 5)], mix_before=Mix(3)), tips=TipPolicy.ONE, multi_dispense=True)
+    with pytest.raises(ValueError, match="air_gap"):
+        TransferSet(moves, air_gap=-1)
     with pytest.raises(ValueError, match="only applies with multi_dispense"):
         TransferSet(moves, tips=TipPolicy.ONE, disposal_volume=2)
     with pytest.raises(ValueError, match="zero or positive"):
         TransferSet(moves, tips=TipPolicy.ONE, multi_dispense=True, disposal_volume=-1)
+
+
+def test_multi_dispense_mix_is_checked_once_per_source():
+    plan = Plan("p")
+    tubes = plan.add_labware("tubes", "tube_rack_24")
+    plate = plan.add_labware("plate", "plate_96")
+    plan.load(tubes["A1"], Liquid("cells"), 110)
+    moves = transfers([(tubes["A1"], w, 20) for w in plate.wells()[:5]], mix_before=Mix(50))
+    plan.add(TransferSet(moves, tips=TipPolicy.ONE, multi_dispense=True))
+    assert plan.validate() == []
+    plan.add(TransferSet(transfers([(tubes["A1"], plate["H12"], 1)], mix_before=Mix(50))))
+    assert [i.message for i in plan.validate()] == ["mix_before of 50 µL at tubes:A1 exceeds its 10 µL"]

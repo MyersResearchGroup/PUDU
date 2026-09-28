@@ -178,6 +178,7 @@ class Plan:
                     error(f"MoveLabware destination '{step.destination}' is neither a declared module nor OFF_DECK", index)
 
             if isinstance(step, TransferSet):
+                mixed_sources = set()
                 for transfer in step.transfers:
                     source_ok = check_well(transfer.source, index)
                     dest_ok = check_well(transfer.dest, index)
@@ -189,7 +190,11 @@ class Plan:
                         available = 0.0
                     elif available + _VOLUME_TOLERANCE < transfer.volume:
                         error(f"{transfer.source} needs {transfer.volume:g} µL but only {available:g} µL remain", index)
-                    if transfer.mix_before and transfer.mix_before.volume > available + _VOLUME_TOLERANCE:
+                    # When multi-dispensing, the source is mixed before each aspiration, not each dispense;
+                    # checking its first use is the closest the plan can get without knowing the robot.
+                    check_mix = not (step.multi_dispense and transfer.source in mixed_sources)
+                    mixed_sources.add(transfer.source)
+                    if check_mix and transfer.mix_before and transfer.mix_before.volume > available + _VOLUME_TOLERANCE:
                         warning(f"mix_before of {transfer.mix_before.volume:g} µL at {transfer.source} exceeds its {available:g} µL", index)
                     volumes[transfer.source] = max(available - transfer.volume, 0.0)
                     volumes[transfer.dest] = volumes.get(transfer.dest, 0.0) + transfer.volume
