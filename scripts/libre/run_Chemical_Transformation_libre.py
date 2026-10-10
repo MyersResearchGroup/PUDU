@@ -217,6 +217,7 @@ class Chemical_transformation(Transformation):
         #Set Temperature and Thermocycler module to 4
         tem_mod.set_temperature(4)
         thermocycler_mod.open_lid()
+        thermocycler_mod.deactivate_lid()
         thermocycler_mod.set_block_temperature(4)
         #Load cells into the thermocycler
         if self.volume_competent_cell_to_add > 20:
@@ -261,7 +262,13 @@ class Chemical_transformation(Transformation):
             self.cold_incubation1, #1st cold incubation (long)
             self.heat_shock, #Heatshock
             self.cold_incubation2] #2nd cold incubation (short)
-        thermocycler_mod.execute_profile(steps=profile, repetitions=1, block_max_volume=30)
+        for _cycle in range(1):
+            for _hold in profile:
+                if _hold['temperature'] < 37:
+                    thermocycler_mod.deactivate_lid()
+                else:
+                    thermocycler_mod.set_lid_temperature(_hold['temperature'])
+                thermocycler_mod.execute_profile(steps=[_hold], repetitions=1, block_max_volume=30)
         #Load LB and recovery incubation
         thermocycler_mod.open_lid()
         #TODO: check if there is the need for more than one tube
@@ -286,7 +293,13 @@ class Chemical_transformation(Transformation):
         thermocycler_mod.close_lid()
         recovery = [
             self.recovery_incubation]
-        thermocycler_mod.execute_profile(steps=recovery, repetitions=1, block_max_volume=30)
+        for _cycle in range(1):
+            for _hold in recovery:
+                if _hold['temperature'] < 37:
+                    thermocycler_mod.deactivate_lid()
+                else:
+                    thermocycler_mod.set_lid_temperature(_hold['temperature'])
+                thermocycler_mod.execute_profile(steps=[_hold], repetitions=1, block_max_volume=30)
         
         #output
         print('Strain and media tube in temp_mod')

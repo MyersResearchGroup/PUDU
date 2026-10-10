@@ -2,6 +2,30 @@ import subprocess
 import time
 from typing import Optional
 
+def set_thermocycler_temperature(module, temperature, **kwargs):
+    """Match lid to block at 37 °C and above; turn lid heating off below 37 °C."""
+    if temperature < 37:
+        module.deactivate_lid()
+    else:
+        module.set_lid_temperature(temperature)
+    module.set_block_temperature(temperature, **kwargs)
+
+
+def execute_thermocycler_profile(module, steps, repetitions=1, block_max_volume=30):
+    """Update the lid for each hold, preserving step durations and cycle order.
+
+    Opentrons profiles only control the block, so execute one hold at a time.
+    Successful execution leaves temperature control at the final hold.
+    """
+    for _ in range(repetitions):
+        for step in steps:
+            if step['temperature'] < 37:
+                module.deactivate_lid()
+            else:
+                module.set_lid_temperature(step['temperature'])
+            module.execute_profile(steps=[step], repetitions=1, block_max_volume=block_max_volume)
+
+
 colors = [
     "#4040BF",   # Blue
     "#BF4040",   # Red

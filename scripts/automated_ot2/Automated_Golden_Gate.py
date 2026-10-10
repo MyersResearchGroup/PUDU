@@ -108,6 +108,7 @@ def run(protocol: protocol_api.ProtocolContext):
     #Set the temperature of the temperature module and the thermocycler to 4°C
     tem_mod.set_temperature(4)
     thermocycler_mod.open_lid()
+    thermocycler_mod.deactivate_lid()
     thermocycler_mod.set_block_temperature(4)
 
     #set the aspirattion rate
@@ -162,10 +163,9 @@ def run(protocol: protocol_api.ProtocolContext):
     
     protocol.comment('Take out the reagents since the temperature module will be turn off')
 
-    #We close the thermocycler lid and wait for the temperature to reach 42°C
+    # Close the lid before running the temperature profile.
     thermocycler_mod.close_lid()
-    #The thermocycler's lid temperature is set with the following command
-    thermocycler_mod.set_lid_temperature(42)
+
     
     tem_mod.deactivate()
 
@@ -173,15 +173,28 @@ def run(protocol: protocol_api.ProtocolContext):
     profile = [
         {'temperature': 42, 'hold_time_minutes': 2},
         {'temperature': 16, 'hold_time_minutes': 5}]
-    thermocycler_mod.execute_profile(steps=profile, repetitions=25, block_max_volume=30)
+    for _cycle in range(25):
+        for _hold in profile:
+            if _hold['temperature'] < 37:
+                thermocycler_mod.deactivate_lid()
+            else:
+                thermocycler_mod.set_lid_temperature(_hold['temperature'])
+            thermocycler_mod.execute_profile(steps=[_hold], repetitions=1, block_max_volume=30)
 
     denaturation = [
         {'temperature': 60, 'hold_time_minutes': 10},
         {'temperature': 80, 'hold_time_minutes': 10}]
-    thermocycler_mod.execute_profile(steps=denaturation, repetitions=1, block_max_volume=30)
+    for _cycle in range(1):
+        for _hold in denaturation:
+            if _hold['temperature'] < 37:
+                thermocycler_mod.deactivate_lid()
+            else:
+                thermocycler_mod.set_lid_temperature(_hold['temperature'])
+            thermocycler_mod.execute_profile(steps=[_hold], repetitions=1, block_max_volume=30)
 
     #The thermocycler's lid is opened and the block temperature is set to 4°C
     #thermocycler_mod.open_lid() #The operator can open the lid manually when the experiment is finished
+    thermocycler_mod.deactivate_lid()
     thermocycler_mod.set_block_temperature(4)
 
     '''

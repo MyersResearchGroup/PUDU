@@ -1,7 +1,7 @@
 from itertools import groupby
 from opentrons import protocol_api
 from typing import List, Dict, Optional
-from pudu.utils import colors
+from pudu.utils import colors, execute_thermocycler_profile, set_thermocycler_temperature
 from dataclasses import dataclass
 
 
@@ -582,7 +582,7 @@ class HeatShockTransformation(Transformation):
         thermocycler_module.open_lid()
         if not self.water_testing:
             temperature_module.set_temperature(4)
-            thermocycler_module.set_block_temperature(4)
+            set_thermocycler_temperature(thermocycler_module, 4)
 
         #Load competent cells into the thermocycler
         pipette = pipette_p300
@@ -603,7 +603,7 @@ class HeatShockTransformation(Transformation):
             self.cold_incubation2  # 2nd cold incubation (short)
         ]
         if not self.water_testing:
-            thermocycler_module.execute_profile(steps=profile, repetitions=1, block_max_volume=30)
+            execute_thermocycler_profile(thermocycler_module, steps=profile, repetitions=1, block_max_volume=30)
         thermocycler_module.open_lid()
 
         #Load liquid broth
@@ -616,7 +616,7 @@ class HeatShockTransformation(Transformation):
             self.recovery_incubation
         ]
         if not self.water_testing:
-            thermocycler_module.execute_profile(steps=recovery, repetitions=1, block_max_volume=30)
+            execute_thermocycler_profile(thermocycler_module, steps=recovery, repetitions=1, block_max_volume=30)
 
         # Export plating input for next protocol (simulation only)
         if protocol.is_simulating():

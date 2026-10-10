@@ -1,4 +1,5 @@
 from opentrons import protocol_api
+from pudu.utils import execute_thermocycler_profile, set_thermocycler_temperature
 from typing import List, Dict
 from pudu.utils import colors
 
@@ -210,7 +211,7 @@ class HeatShockTransformation(Transformation):
         thermocycler_module.open_lid()
         if not self.water_testing:
             temperature_module.set_temperature(4)
-            thermocycler_module.set_block_temperature(4)
+            set_thermocycler_temperature(thermocycler_module, 4)
 
         #Load competent cells into the thermocycler
         pipette = pipette_p300
@@ -231,7 +232,7 @@ class HeatShockTransformation(Transformation):
             self.cold_incubation2  # 2nd cold incubation (short)
         ]
         if not self.water_testing:
-            thermocycler_module.execute_profile(steps=profile, repetitions=1, block_max_volume=30)
+            execute_thermocycler_profile(thermocycler_module, steps=profile, repetitions=1, block_max_volume=30)
         thermocycler_module.open_lid()
 
         #Load liquid broth
@@ -244,7 +245,7 @@ class HeatShockTransformation(Transformation):
             self.recovery_incubation
         ]
         if not self.water_testing:
-            thermocycler_module.execute_profile(steps=recovery, repetitions=1, block_max_volume=30)
+            execute_thermocycler_profile(thermocycler_module, steps=recovery, repetitions=1, block_max_volume=30)
 
         # output
         print('Strain and media tube in temp_mod')
