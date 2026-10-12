@@ -3,6 +3,7 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass
 from pudu import colors, SmartPipette
 from opentrons import protocol_api
+from pudu.utils import set_thermocycler_temperature
 
 class Plating():
     """
@@ -602,7 +603,7 @@ class Plating():
                                                       wells_per_dilution=self.number_constructs * self.replicates)
 
 
-        thermocycler.set_block_temperature(4)
+        set_thermocycler_temperature(thermocycler, 4)
         thermocycler.open_lid()
 
         #Load the Liquid Broth into the dilution wells

@@ -1,6 +1,7 @@
 from typing import Optional, Dict
 from pudu import colors, SmartPipette
 from opentrons import protocol_api
+from pudu.utils import set_thermocycler_temperature
 
 
 # construct_colors = ["#0000FF", "#FF0000", "#00FF00", "#8B4513", "#FFA500", "#000000", "#800080"]
@@ -328,7 +329,7 @@ class Plating():
             agar_layout = self.calculate_plate_layout(protocol, agar_plate1, agar_plate2)
 
 
-        thermocycler.set_block_temperature(4)
+        set_thermocycler_temperature(thermocycler, 4)
         thermocycler.open_lid()
 
         #Load the Liquid Broth into the dilution wells

@@ -83,3 +83,7 @@ PYTHONPATH=src python scripts/generate_manual_assembly_protocol.py
 ```
 
 This writes a protocol document to `scripts/manual_assembly_protocol.md`.
+
+## Thermocycler lid control
+
+Assembly, transformation, and plating match the lid target to the block target at 37 °C and above. Below 37 °C, the lid heater is turned off because the Opentrons heated lid does not support colder targets. This applies to setup and final holds as well as every step of a repeated profile. Hold durations and cycle order are preserved; temperature control remains at the final hold after a successful profile. Water-testing modes continue to skip temperature control.

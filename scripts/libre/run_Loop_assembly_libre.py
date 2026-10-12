@@ -222,6 +222,7 @@ class Loop_assembly(DNA_assembly):
         #Set the temperature of the temperature module and the thermocycler to 4°C
         tem_mod.set_temperature(4)
         thermocycler_mod.open_lid()
+        thermocycler_mod.deactivate_lid()
         thermocycler_mod.set_block_temperature(4)
         #can be done with multichannel pipette?
         current_thermocycler_well = self.thermocycler_starting_well
@@ -262,21 +263,33 @@ class Loop_assembly(DNA_assembly):
                 current_thermocycler_well+=1
         
         protocol.comment('Take out the reagents since the temperature module will be turn off')
-        #We close the thermocycler lid and wait for the temperature to reach 42°C
+        # Close the lid before running the temperature profile.
         thermocycler_mod.close_lid()
-        #The thermocycler's lid temperature is set with the following command
-        thermocycler_mod.set_lid_temperature(42)
+
         tem_mod.deactivate()
         #Cycles were made following https://pubs.acs.org/doi/10.1021/sb500366v
         profile = [
             {'temperature': 42, 'hold_time_minutes': 2},
             {'temperature': 16, 'hold_time_minutes': 5}]
-        thermocycler_mod.execute_profile(steps=profile, repetitions=75, block_max_volume=30)
+        for _cycle in range(75):
+            for _hold in profile:
+                if _hold['temperature'] < 37:
+                    thermocycler_mod.deactivate_lid()
+                else:
+                    thermocycler_mod.set_lid_temperature(_hold['temperature'])
+                thermocycler_mod.execute_profile(steps=[_hold], repetitions=1, block_max_volume=30)
 
         denaturation = [
             {'temperature': 60, 'hold_time_minutes': 10},
             {'temperature': 80, 'hold_time_minutes': 10}]
-        thermocycler_mod.execute_profile(steps=denaturation, repetitions=1, block_max_volume=30)
+        for _cycle in range(1):
+            for _hold in denaturation:
+                if _hold['temperature'] < 37:
+                    thermocycler_mod.deactivate_lid()
+                else:
+                    thermocycler_mod.set_lid_temperature(_hold['temperature'])
+                thermocycler_mod.execute_profile(steps=[_hold], repetitions=1, block_max_volume=30)
+        thermocycler_mod.deactivate_lid()
         thermocycler_mod.set_block_temperature(4)
         #END
 

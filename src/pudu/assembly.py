@@ -6,7 +6,9 @@ from itertools import product
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from pudu.utils import Camera, colors
+from pudu.utils import (
+    Camera, colors, execute_thermocycler_profile, set_thermocycler_temperature,
+)
 
 
 @dataclass
@@ -521,7 +523,7 @@ class BaseAssembly(ABC):
         thermocycler_module.open_lid()
         if not self.water_testing:
             temperature_module.set_temperature(4)
-            thermocycler_module.set_block_temperature(4)
+            set_thermocycler_temperature(thermocycler_module, 4)
 
         # Media capture start
         if self.take_picture:
@@ -542,7 +544,7 @@ class BaseAssembly(ABC):
         # Thermocycling
         if not self.water_testing:
             thermocycler_module.close_lid()
-            thermocycler_module.set_lid_temperature(42)
+
             temperature_module.deactivate()
 
         # Media capture end
@@ -561,9 +563,9 @@ class BaseAssembly(ABC):
                 {'temperature': 60, 'hold_time_minutes': 10},
                 {'temperature': 80, 'hold_time_minutes': 10}
             ]
-            thermocycler_module.execute_profile(steps=profile, repetitions=75, block_max_volume=30)
-            thermocycler_module.execute_profile(steps=denaturation, repetitions=1, block_max_volume=30)
-            thermocycler_module.set_block_temperature(4)
+            execute_thermocycler_profile(thermocycler_module, steps=profile, repetitions=75, block_max_volume=30)
+            execute_thermocycler_profile(thermocycler_module, steps=denaturation, repetitions=1, block_max_volume=30)
+            set_thermocycler_temperature(thermocycler_module, 4)
 
         if protocol.is_simulating():
             if self.output_xlsx:
